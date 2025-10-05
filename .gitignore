@@ -33,6 +33,11 @@ Thumbs.db
 # Dependencies
 /vendor/
 
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
 # WASM build outputs
 *.wasm
 wasm_exec.js
@@ -41,6 +46,9 @@ wasm_exec.js
 *.db
 *.db-shm
 *.db-wal
+
+# Docker volumes
+data/
 
 # Logs
 *.log

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Rustpad</title>
+    <meta
+      name="description"
+      content="An efficient and minimal open-source collaborative text editor based on the operational transformation algorithm."
+    />
+    <meta name="author" content="Eric Zhang" />
+
+    <meta property="og:title" content="Rustpad: Collaborative Code Editor" />
+    <meta
+      property="og:description"
+      content="An efficient and minimal open-source collaborative text editor based on the operational transformation algorithm."
+    />
+  </head>
+  <body>
+    <div id="root"></div>
+    <!-- Load Go WASM runtime -->
+    <script src="/wasm_exec.js"></script>
+    <script>
+      // Load and initialize Go WASM module
+      const go = new Go();
+      WebAssembly.instantiateStreaming(fetch('/ot.wasm'), go.importObject)
+        .then(result => {
+          go.run(result.instance);
+          console.log('Go WASM OT module loaded');
+        })
+        .catch(err => {
+          console.error('Failed to load WASM:', err);
+        });
+    </script>
+    <script type="module" src="/src/index.tsx"></script>
+  </body>
+</html>

@@ -1,6 +1,6 @@
 # Kolabpad - Collaborative Text Editor (Go Port)
 
-A Go implementation of [Rustpad](https://github.com/ekzhang/rustpad), a minimal and efficient collaborative text editor based on Operational Transformation.
+A complete Go implementation of [Rustpad](https://github.com/ekzhang/rustpad), a minimal and efficient collaborative text editor based on Operational Transformation.
 
 ## Status
 
@@ -18,54 +18,84 @@ A Go implementation of [Rustpad](https://github.com/ekzhang/rustpad), a minimal 
 - HTTP API endpoints
 
 **Phase 3: Database & Deployment** ✅ Complete
-- SQLite persistence layer ✅
+- SQLite persistence layer
 - Automatic document persistence
 - Load-on-demand from database
-- Docker deployment (TODO)
-- Integration tests (TODO)
+- Docker multi-stage build
+- docker-compose deployment
+
+**Phase 4: Frontend Integration** ✅ Complete
+- Go WASM module for browser-side OT
+- Rustpad React/TypeScript frontend
+- Monaco editor integration
+- Single Dockerfile builds all components
 
 ## Architecture
 
 ```
 kolabpad/
 ├── cmd/
-│   └── server/          # Main server binary
+│   ├── server/          # Main server binary
+│   └── ot-wasm/         # Go WASM module for browser
 ├── pkg/
-│   ├── ot/             # Core OT library (ported from Rust)
-│   └── server/         # WebSocket server & document management
+│   ├── ot/              # Core OT library (ported from Rust)
+│   ├── server/          # WebSocket server & document management
+│   └── database/        # SQLite persistence layer
 ├── internal/
-│   └── protocol/       # Wire protocol message types
-└── testdata/           # Test fixtures
+│   └── protocol/        # Wire protocol message types
+├── frontend/            # React/TypeScript UI (from Rustpad)
+│   ├── src/             # React components and WASM integration
+│   ├── public/          # Static assets (includes built WASM)
+│   └── package.json     # Frontend dependencies
+├── Dockerfile           # Multi-stage: WASM → Frontend → Backend → Runtime
+└── docker-compose.yml   # Single-container deployment
 ```
 
 ## Quick Start
 
-### Build and Run
+### Docker Deployment (Recommended)
 
-#### Local Development
+```bash
+# Build and run everything with Docker Compose
+docker-compose up -d
+
+# Access at http://localhost:3030
+```
+
+The multi-stage Dockerfile builds:
+1. Go WASM module (`ot.wasm`)
+2. React frontend (with WASM embedded)
+3. Go backend server
+4. Final Alpine runtime image
+
+### Local Development
+
+#### Backend Only
 
 ```bash
 # Build server
 go build -o bin/kolabpad-server ./cmd/server/
 
-# Run without database (in-memory only)
-PORT=3030 EXPIRY_DAYS=1 ./bin/kolabpad-server
-
 # Run with SQLite persistence
 PORT=3030 EXPIRY_DAYS=7 SQLITE_URI=kolabpad.db ./bin/kolabpad-server
 ```
 
-#### Docker Deployment
+#### Full Stack (Backend + Frontend)
 
 ```bash
-# Build and run with Docker Compose
-docker-compose up -d
+# Terminal 1: Build WASM module
+GOOS=js GOARCH=wasm go build -o frontend/public/ot.wasm ./cmd/ot-wasm/
+cp $(go env GOROOT)/misc/wasm/wasm_exec.js frontend/public/
 
-# Build Docker image manually
-docker build -t kolabpad .
+# Terminal 2: Start frontend dev server
+cd frontend
+npm install
+npm run dev
 
-# Run container
-docker run -p 3030:3030 -v $(pwd)/data:/data kolabpad
+# Terminal 3: Start backend server
+PORT=3030 SQLITE_URI=kolabpad.db go run ./cmd/server/
+
+# Access at http://localhost:5173 (Vite dev server proxies to backend)
 ```
 
 ### Environment Variables
@@ -79,6 +109,7 @@ docker run -p 3030:3030 -v $(pwd)/data:/data kolabpad
 - `GET /api/text/{id}` - Fetch document text
 - `GET /api/stats` - Server statistics
 - `WebSocket /api/socket/{id}` - Collaborative editing session
+- `GET /` - Serve frontend React app (production build)
 
 ## OT Library Usage
 
@@ -143,10 +174,11 @@ This means you can:
 - [x] SQLite persistence
 - [x] Background persister task
 - [x] Document cleanup (GC)
+- [x] Docker deployment
+- [x] Go WASM module for browser
+- [x] Frontend integration (Rustpad UI)
 - [ ] Integration tests
 - [ ] Performance benchmarks vs Rust
-- [ ] Docker deployment
-- [ ] WASM bindings (optional)
 
 ## Full Feature Parity with Rustpad ✅
 

@@ -12,3 +12,8 @@ services:
     volumes:
       - ./data:/data
     restart: unless-stopped
+
+  # Future additions:
+  # - nginx reverse proxy for SSL/caching
+  # - redis for session storage
+  # - postgres for production database

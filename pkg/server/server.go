@@ -55,10 +55,14 @@ func NewServer(db *database.Database) *Server {
 		mux:   http.NewServeMux(),
 	}
 
-	// Register routes
+	// API routes (must be registered first for priority)
 	s.mux.HandleFunc("/api/socket/", s.handleSocket)
 	s.mux.HandleFunc("/api/text/", s.handleText)
 	s.mux.HandleFunc("/api/stats", s.handleStats)
+
+	// Serve frontend static files from dist/
+	fs := http.FileServer(http.Dir("./dist"))
+	s.mux.Handle("/", fs)
 
 	return s
 }
