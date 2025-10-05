@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"math/rand"
 	"net/http"
 	"sync"
 	"time"
 
 	"nhooyr.io/websocket"
+
+	"github.com/shiv/kolabpad/pkg/database"
 )
 
 // Document represents a document entry in the server map.
@@ -21,12 +24,14 @@ type Document struct {
 type ServerState struct {
 	documents sync.Map // map[string]*Document
 	startTime time.Time
+	db        *database.Database // Optional database
 }
 
 // NewServerState creates a new server state.
-func NewServerState() *ServerState {
+func NewServerState(db *database.Database) *ServerState {
 	return &ServerState{
 		startTime: time.Now(),
+		db:        db,
 	}
 }
 
@@ -44,9 +49,9 @@ type Server struct {
 }
 
 // NewServer creates a new HTTP server.
-func NewServer() *Server {
+func NewServer(db *database.Database) *Server {
 	s := &Server{
-		state: NewServerState(),
+		state: NewServerState(db),
 		mux:   http.NewServeMux(),
 	}
 
@@ -79,6 +84,11 @@ func (s *Server) handleSocket(w http.ResponseWriter, r *http.Request) {
 	doc := s.getOrCreateDocument(docID)
 	doc.LastAccessed = time.Now()
 
+	// Start persister if database is enabled
+	if s.state.db != nil {
+		go s.persister(r.Context(), docID, doc.Rustpad)
+	}
+
 	// Upgrade to WebSocket
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 		CompressionMode: websocket.CompressionDisabled,
@@ -106,13 +116,25 @@ func (s *Server) handleText(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if document exists
+	// Check if document exists in memory
 	if val, ok := s.state.documents.Load(docID); ok {
 		doc := val.(*Document)
 		text := doc.Rustpad.Text()
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.Write([]byte(text))
 		return
+	}
+
+	// Try loading from database
+	if s.state.db != nil {
+		doc, err := s.state.db.Load(docID)
+		if err != nil {
+			log.Printf("Error loading document from DB: %v", err)
+		} else if doc != nil {
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			w.Write([]byte(doc.Text))
+			return
+		}
 	}
 
 	// Document doesn't exist, return empty
@@ -130,10 +152,18 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		return true
 	})
 
+	// Count database documents
+	dbSize := 0
+	if s.state.db != nil {
+		if count, err := s.state.db.Count(); err == nil {
+			dbSize = count
+		}
+	}
+
 	stats := Stats{
 		StartTime:    s.state.startTime.Unix(),
 		NumDocuments: numDocs,
-		DatabaseSize: 0, // TODO: implement database
+		DatabaseSize: dbSize,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -147,10 +177,23 @@ func (s *Server) getOrCreateDocument(id string) *Document {
 		return val.(*Document)
 	}
 
-	// Create new document
+	// Try loading from database
+	var rustpad *Rustpad
+	if s.state.db != nil {
+		if persisted, err := s.state.db.Load(id); err == nil && persisted != nil {
+			log.Printf("Loaded document %s from database", id)
+			rustpad = FromPersistedDocument(persisted.Text, persisted.Language)
+		}
+	}
+
+	// Create new document if not in database
+	if rustpad == nil {
+		rustpad = NewRustpad()
+	}
+
 	doc := &Document{
 		LastAccessed: time.Now(),
-		Rustpad:      NewRustpad(),
+		Rustpad:      rustpad,
 	}
 
 	// Store with LoadOrStore to handle race conditions
@@ -217,9 +260,55 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	return nil
 }
 
+// persister periodically saves a document to the database.
+func (s *Server) persister(ctx context.Context, id string, rustpad *Rustpad) {
+	if s.state.db == nil {
+		return
+	}
+
+	const persistInterval = 3 * time.Second
+	const persistJitter = 1 * time.Second
+
+	lastRevision := 0
+
+	for {
+		// Add random jitter to avoid thundering herd
+		jitter := time.Duration(rand.Int63n(int64(persistJitter)))
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(persistInterval + jitter):
+		}
+
+		// Check if document has been killed
+		if rustpad.Killed() {
+			return
+		}
+
+		// Check if there are new changes
+		revision := rustpad.Revision()
+		if revision > lastRevision {
+			text, language := rustpad.Snapshot()
+			doc := &database.PersistedDocument{
+				ID:       id,
+				Text:     text,
+				Language: language,
+			}
+
+			log.Printf("persisting revision %d for id = %s", revision, id)
+			if err := s.state.db.Store(doc); err != nil {
+				log.Printf("error persisting document %s: %v", id, err)
+			} else {
+				lastRevision = revision
+			}
+		}
+	}
+}
+
 // Example usage:
 //
-//	server := NewServer()
+//	db, _ := database.New("kolabpad.db")
+//	server := NewServer(db)
 //
 //	// Start cleanup task
 //	ctx, cancel := context.WithCancel(context.Background())

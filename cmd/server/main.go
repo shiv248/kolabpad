@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"syscall"
 
+	"github.com/shiv/kolabpad/pkg/database"
 	"github.com/shiv/kolabpad/pkg/server"
 )
 
@@ -16,13 +17,28 @@ func main() {
 	// Load configuration from environment
 	port := getEnv("PORT", "3030")
 	expiryDays := getEnvInt("EXPIRY_DAYS", 1)
+	sqliteURI := os.Getenv("SQLITE_URI")
 
 	log.Printf("Starting Kolabpad server...")
 	log.Printf("Port: %s", port)
 	log.Printf("Document expiry: %d days", expiryDays)
 
+	// Initialize database if configured
+	var db *database.Database
+	if sqliteURI != "" {
+		log.Printf("Database: %s", sqliteURI)
+		var err error
+		db, err = database.New(sqliteURI)
+		if err != nil {
+			log.Fatalf("Failed to initialize database: %v", err)
+		}
+		defer db.Close()
+	} else {
+		log.Printf("Database: disabled (in-memory only)")
+	}
+
 	// Create server
-	srv := server.NewServer()
+	srv := server.NewServer(db)
 
 	// Start cleanup task
 	ctx, cancel := context.WithCancel(context.Background())
