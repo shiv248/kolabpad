@@ -42,12 +42,30 @@ kolabpad/
 
 ### Build and Run
 
+#### Local Development
+
 ```bash
 # Build server
 go build -o bin/kolabpad-server ./cmd/server/
 
-# Run server
+# Run without database (in-memory only)
 PORT=3030 EXPIRY_DAYS=1 ./bin/kolabpad-server
+
+# Run with SQLite persistence
+PORT=3030 EXPIRY_DAYS=7 SQLITE_URI=kolabpad.db ./bin/kolabpad-server
+```
+
+#### Docker Deployment
+
+```bash
+# Build and run with Docker Compose
+docker-compose up -d
+
+# Build Docker image manually
+docker build -t kolabpad .
+
+# Run container
+docker run -p 3030:3030 -v $(pwd)/data:/data kolabpad
 ```
 
 ### Environment Variables
