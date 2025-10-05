@@ -5,13 +5,13 @@ import { useEffect, useRef, useState } from "react";
 import { VscChevronRight, VscFolderOpened, VscGist } from "react-icons/vsc";
 import useLocalStorageState from "use-local-storage-state";
 
-import rustpadRaw from "../../pkg/server/rustpad.go?raw";
+import kolabpadRaw from "../../pkg/server/kolabpad.go?raw";
 import Footer from "./Footer";
 import ReadCodeConfirm from "./ReadCodeConfirm";
 import Sidebar from "./Sidebar";
 import animals from "./animals.json";
 import languages from "./languages.json";
-import Rustpad, { UserInfo } from "./rustpad";
+import Kolabpad, { UserInfo } from "./kolabpad";
 import useHash from "./useHash";
 
 function getWsUri(id: string) {
@@ -45,7 +45,7 @@ function App() {
   const [darkMode, setDarkMode] = useLocalStorageState("darkMode", {
     defaultValue: false,
   });
-  const rustpad = useRef<Rustpad>();
+  const kolabpad = useRef<Kolabpad>();
   const id = useHash();
 
   const [readCodeConfirmOpen, setReadCodeConfirmOpen] = useState(false);
@@ -55,7 +55,7 @@ function App() {
       const model = editor.getModel()!;
       model.setValue("");
       model.setEOL(0); // LF
-      rustpad.current = new Rustpad({
+      kolabpad.current = new Kolabpad({
         uri: getWsUri(id),
         editor,
         onConnected: () => setConnection("connected"),
@@ -77,21 +77,21 @@ function App() {
         onChangeUsers: setUsers,
       });
       return () => {
-        rustpad.current?.dispose();
-        rustpad.current = undefined;
+        kolabpad.current?.dispose();
+        kolabpad.current = undefined;
       };
     }
   }, [id, editor, toast, setUsers]);
 
   useEffect(() => {
     if (connection === "connected") {
-      rustpad.current?.setInfo({ name, hue });
+      kolabpad.current?.setInfo({ name, hue });
     }
   }, [connection, name, hue]);
 
   function handleLanguageChange(language: string) {
     setLanguage(language);
-    if (rustpad.current?.setLanguage(language)) {
+    if (kolabpad.current?.setLanguage(language)) {
       toast({
         title: "Language updated",
         description: (
@@ -123,7 +123,7 @@ function App() {
 
       model.pushEditOperations(
         editor.getSelections(),
-        [{ range, text: rustpadRaw }],
+        [{ range, text: kolabpadRaw }],
         () => null,
       );
       editor.setPosition({ column: 0, lineNumber: 0 });
@@ -153,7 +153,7 @@ function App() {
         fontSize="sm"
         py={0.5}
       >
-        Rustpad
+        Kolabpad
       </Box>
       <Flex flex="1 0" minH={0}>
         <Sidebar

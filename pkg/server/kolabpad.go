@@ -1,4 +1,4 @@
-// Package server implements the Rustpad collaborative editing server.
+// Package server implements the Kolabpad collaborative editing server.
 package server
 
 import (
@@ -19,8 +19,8 @@ type State struct {
 	Cursors    map[uint64]protocol.CursorData // User cursor positions
 }
 
-// Rustpad is the main collaborative editing session manager.
-type Rustpad struct {
+// Kolabpad is the main collaborative editing session manager.
+type Kolabpad struct {
 	state   *State
 	mu      sync.RWMutex
 	count   atomic.Uint64       // User ID counter
@@ -28,9 +28,9 @@ type Rustpad struct {
 	updates chan *protocol.ServerMsg // Broadcast channel for metadata updates
 }
 
-// NewRustpad creates a new collaborative editing session.
-func NewRustpad() *Rustpad {
-	return &Rustpad{
+// NewKolabpad creates a new collaborative editing session.
+func NewKolabpad() *Kolabpad {
+	return &Kolabpad{
 		state: &State{
 			Operations: make([]protocol.UserOperation, 0),
 			Text:       "",
@@ -42,9 +42,9 @@ func NewRustpad() *Rustpad {
 	}
 }
 
-// FromPersistedDocument creates a Rustpad instance from a persisted document.
-func FromPersistedDocument(text string, language *string) *Rustpad {
-	r := NewRustpad()
+// FromPersistedDocument creates a Kolabpad instance from a persisted document.
+func FromPersistedDocument(text string, language *string) *Kolabpad {
+	r := NewKolabpad()
 
 	// Create an initial insert operation for the loaded text
 	if text != "" {
@@ -65,50 +65,50 @@ func FromPersistedDocument(text string, language *string) *Rustpad {
 }
 
 // NextUserID returns the next available user ID.
-func (r *Rustpad) NextUserID() uint64 {
+func (r *Kolabpad) NextUserID() uint64 {
 	return r.count.Add(1) - 1
 }
 
 // Revision returns the current revision number.
-func (r *Rustpad) Revision() int {
+func (r *Kolabpad) Revision() int {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return len(r.state.Operations)
 }
 
 // Text returns a copy of the current document text.
-func (r *Rustpad) Text() string {
+func (r *Kolabpad) Text() string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.state.Text
 }
 
 // Snapshot returns a snapshot of the current document for persistence.
-func (r *Rustpad) Snapshot() (text string, language *string) {
+func (r *Kolabpad) Snapshot() (text string, language *string) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.state.Text, r.state.Language
 }
 
 // Kill marks this document as killed and closes the update channel.
-func (r *Rustpad) Kill() {
+func (r *Kolabpad) Kill() {
 	if r.killed.CompareAndSwap(false, true) {
 		close(r.updates)
 	}
 }
 
 // Killed returns true if this document has been killed.
-func (r *Rustpad) Killed() bool {
+func (r *Kolabpad) Killed() bool {
 	return r.killed.Load()
 }
 
 // Updates returns the channel for receiving metadata updates.
-func (r *Rustpad) Updates() <-chan *protocol.ServerMsg {
+func (r *Kolabpad) Updates() <-chan *protocol.ServerMsg {
 	return r.updates
 }
 
 // GetInitialState returns the initial state to send to a connecting client.
-func (r *Rustpad) GetInitialState() (
+func (r *Kolabpad) GetInitialState() (
 	ops []protocol.UserOperation,
 	lang *string,
 	users map[uint64]protocol.UserInfo,
@@ -137,7 +137,7 @@ func (r *Rustpad) GetInitialState() (
 }
 
 // GetHistory returns operations from a starting revision.
-func (r *Rustpad) GetHistory(start int) []protocol.UserOperation {
+func (r *Kolabpad) GetHistory(start int) []protocol.UserOperation {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -152,7 +152,7 @@ func (r *Rustpad) GetHistory(start int) []protocol.UserOperation {
 }
 
 // ApplyEdit applies an edit operation from a client.
-func (r *Rustpad) ApplyEdit(userID uint64, revision int, operation *ot.OperationSeq) error {
+func (r *Kolabpad) ApplyEdit(userID uint64, revision int, operation *ot.OperationSeq) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -216,7 +216,7 @@ func (r *Rustpad) ApplyEdit(userID uint64, revision int, operation *ot.Operation
 }
 
 // SetLanguage sets the document's syntax highlighting language.
-func (r *Rustpad) SetLanguage(lang string) {
+func (r *Kolabpad) SetLanguage(lang string) {
 	r.mu.Lock()
 	r.state.Language = &lang
 	r.mu.Unlock()
@@ -229,7 +229,7 @@ func (r *Rustpad) SetLanguage(lang string) {
 }
 
 // SetUserInfo updates a user's display information.
-func (r *Rustpad) SetUserInfo(userID uint64, info protocol.UserInfo) {
+func (r *Kolabpad) SetUserInfo(userID uint64, info protocol.UserInfo) {
 	r.mu.Lock()
 	r.state.Users[userID] = info
 	r.mu.Unlock()
@@ -242,7 +242,7 @@ func (r *Rustpad) SetUserInfo(userID uint64, info protocol.UserInfo) {
 }
 
 // SetCursorData updates a user's cursor positions.
-func (r *Rustpad) SetCursorData(userID uint64, data protocol.CursorData) {
+func (r *Kolabpad) SetCursorData(userID uint64, data protocol.CursorData) {
 	r.mu.Lock()
 	r.state.Cursors[userID] = data
 	r.mu.Unlock()
@@ -255,7 +255,7 @@ func (r *Rustpad) SetCursorData(userID uint64, data protocol.CursorData) {
 }
 
 // RemoveUser removes a user from the session.
-func (r *Rustpad) RemoveUser(userID uint64) {
+func (r *Kolabpad) RemoveUser(userID uint64) {
 	r.mu.Lock()
 	delete(r.state.Users, userID)
 	delete(r.state.Cursors, userID)

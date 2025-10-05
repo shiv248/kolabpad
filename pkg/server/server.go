@@ -17,7 +17,7 @@ import (
 // Document represents a document entry in the server map.
 type Document struct {
 	LastAccessed time.Time
-	Rustpad      *Rustpad
+	Kolabpad      *Kolabpad
 }
 
 // ServerState holds all server-wide state.
@@ -90,7 +90,7 @@ func (s *Server) handleSocket(w http.ResponseWriter, r *http.Request) {
 
 	// Start persister if database is enabled
 	if s.state.db != nil {
-		go s.persister(r.Context(), docID, doc.Rustpad)
+		go s.persister(r.Context(), docID, doc.Kolabpad)
 	}
 
 	// Upgrade to WebSocket
@@ -103,7 +103,7 @@ func (s *Server) handleSocket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Handle connection
-	connHandler := NewConnection(doc.Rustpad, conn)
+	connHandler := NewConnection(doc.Kolabpad, conn)
 	if err := connHandler.Handle(r.Context()); err != nil {
 		log.Printf("Connection error: %v", err)
 	}
@@ -123,7 +123,7 @@ func (s *Server) handleText(w http.ResponseWriter, r *http.Request) {
 	// Check if document exists in memory
 	if val, ok := s.state.documents.Load(docID); ok {
 		doc := val.(*Document)
-		text := doc.Rustpad.Text()
+		text := doc.Kolabpad.Text()
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.Write([]byte(text))
 		return
@@ -182,22 +182,22 @@ func (s *Server) getOrCreateDocument(id string) *Document {
 	}
 
 	// Try loading from database
-	var rustpad *Rustpad
+	var kolabpad *Kolabpad
 	if s.state.db != nil {
 		if persisted, err := s.state.db.Load(id); err == nil && persisted != nil {
 			log.Printf("Loaded document %s from database", id)
-			rustpad = FromPersistedDocument(persisted.Text, persisted.Language)
+			kolabpad = FromPersistedDocument(persisted.Text, persisted.Language)
 		}
 	}
 
 	// Create new document if not in database
-	if rustpad == nil {
-		rustpad = NewRustpad()
+	if kolabpad == nil {
+		kolabpad = NewKolabpad()
 	}
 
 	doc := &Document{
 		LastAccessed: time.Now(),
-		Rustpad:      rustpad,
+		Kolabpad:      kolabpad,
 	}
 
 	// Store with LoadOrStore to handle race conditions
@@ -241,7 +241,7 @@ func (s *Server) cleanupExpiredDocuments(expiryDays int) {
 		for _, id := range toDelete {
 			if val, ok := s.state.documents.LoadAndDelete(id); ok {
 				doc := val.(*Document)
-				doc.Rustpad.Kill()
+				doc.Kolabpad.Kill()
 			}
 		}
 	}
@@ -258,14 +258,14 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	// Kill all documents
 	s.state.documents.Range(func(key, value interface{}) bool {
 		doc := value.(*Document)
-		doc.Rustpad.Kill()
+		doc.Kolabpad.Kill()
 		return true
 	})
 	return nil
 }
 
 // persister periodically saves a document to the database.
-func (s *Server) persister(ctx context.Context, id string, rustpad *Rustpad) {
+func (s *Server) persister(ctx context.Context, id string, kolabpad *Kolabpad) {
 	if s.state.db == nil {
 		return
 	}
@@ -285,14 +285,14 @@ func (s *Server) persister(ctx context.Context, id string, rustpad *Rustpad) {
 		}
 
 		// Check if document has been killed
-		if rustpad.Killed() {
+		if kolabpad.Killed() {
 			return
 		}
 
 		// Check if there are new changes
-		revision := rustpad.Revision()
+		revision := kolabpad.Revision()
 		if revision > lastRevision {
-			text, language := rustpad.Snapshot()
+			text, language := kolabpad.Snapshot()
 			doc := &database.PersistedDocument{
 				ID:       id,
 				Text:     text,

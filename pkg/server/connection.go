@@ -17,7 +17,7 @@ import (
 // Connection represents a single client WebSocket connection.
 type Connection struct {
 	userID  uint64
-	rustpad *Rustpad
+	kolabpad *Kolabpad
 	conn    *websocket.Conn
 	ctx     context.Context
 	cancel  context.CancelFunc
@@ -25,11 +25,11 @@ type Connection struct {
 }
 
 // NewConnection creates a new client connection handler.
-func NewConnection(rustpad *Rustpad, conn *websocket.Conn) *Connection {
+func NewConnection(kolabpad *Kolabpad, conn *websocket.Conn) *Connection {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Connection{
-		userID:  rustpad.NextUserID(),
-		rustpad: rustpad,
+		userID:  kolabpad.NextUserID(),
+		kolabpad: kolabpad,
 		conn:    conn,
 		ctx:     ctx,
 		cancel:  cancel,
@@ -63,7 +63,7 @@ func (c *Connection) Handle(ctx context.Context) error {
 		}
 
 		// Check for new history to send
-		if c.rustpad.Revision() > revision {
+		if c.kolabpad.Revision() > revision {
 			newRev, err := c.sendHistory(revision)
 			if err != nil {
 				return fmt.Errorf("send history: %w", err)
@@ -100,7 +100,7 @@ func (c *Connection) sendInitial() (int, error) {
 	}
 
 	// Get initial state
-	ops, lang, users, cursors := c.rustpad.GetInitialState()
+	ops, lang, users, cursors := c.kolabpad.GetInitialState()
 
 	// Send operation history
 	if len(ops) > 0 {
@@ -136,7 +136,7 @@ func (c *Connection) sendInitial() (int, error) {
 
 // sendHistory sends operation history from a starting revision.
 func (c *Connection) sendHistory(start int) (int, error) {
-	ops := c.rustpad.GetHistory(start)
+	ops := c.kolabpad.GetHistory(start)
 	if len(ops) > 0 {
 		if err := c.send(protocol.NewHistoryMsg(start, ops)); err != nil {
 			return start, err
@@ -149,24 +149,24 @@ func (c *Connection) sendHistory(start int) (int, error) {
 func (c *Connection) handleMessage(msg *protocol.ClientMsg) error {
 	if msg.Edit != nil {
 		// Apply edit operation
-		if err := c.rustpad.ApplyEdit(c.userID, msg.Edit.Revision, msg.Edit.Operation); err != nil {
+		if err := c.kolabpad.ApplyEdit(c.userID, msg.Edit.Revision, msg.Edit.Operation); err != nil {
 			return fmt.Errorf("apply edit: %w", err)
 		}
 		return nil
 	}
 
 	if msg.SetLanguage != nil {
-		c.rustpad.SetLanguage(*msg.SetLanguage)
+		c.kolabpad.SetLanguage(*msg.SetLanguage)
 		return nil
 	}
 
 	if msg.ClientInfo != nil {
-		c.rustpad.SetUserInfo(c.userID, *msg.ClientInfo)
+		c.kolabpad.SetUserInfo(c.userID, *msg.ClientInfo)
 		return nil
 	}
 
 	if msg.CursorData != nil {
-		c.rustpad.SetCursorData(c.userID, *msg.CursorData)
+		c.kolabpad.SetCursorData(c.userID, *msg.CursorData)
 		return nil
 	}
 
@@ -181,9 +181,9 @@ func (c *Connection) broadcastUpdates(done chan struct{}) {
 		select {
 		case <-c.ctx.Done():
 			return
-		case msg, ok := <-c.rustpad.Updates():
+		case msg, ok := <-c.kolabpad.Updates():
 			if !ok {
-				// Channel closed, rustpad killed
+				// Channel closed, kolabpad killed
 				return
 			}
 			if err := c.send(msg); err != nil {
@@ -213,6 +213,6 @@ func (c *Connection) send(msg *protocol.ServerMsg) error {
 // cleanup removes the user from the session.
 func (c *Connection) cleanup() {
 	log.Printf("disconnection, id = %d", c.userID)
-	c.rustpad.RemoveUser(c.userID)
+	c.kolabpad.RemoveUser(c.userID)
 	c.cancel()
 }

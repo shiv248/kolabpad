@@ -8,8 +8,8 @@ import type {
 // OpSeq is loaded from Go WASM (global variable set by cmd/ot-wasm)
 declare const OpSeq: any;
 
-/** Options passed in to the Rustpad constructor. */
-export type RustpadOptions = {
+/** Options passed in to the Kolabpad constructor. */
+export type KolabpadOptions = {
   readonly uri: string;
   readonly editor: editor.IStandaloneCodeEditor;
   readonly onConnected?: () => void;
@@ -26,8 +26,8 @@ export type UserInfo = {
   readonly hue: number;
 };
 
-/** Browser client for Rustpad. */
-class Rustpad {
+/** Browser client for Kolabpad. */
+class Kolabpad {
   private ws?: WebSocket;
   private connecting?: boolean;
   private recentFailures: number = 0;
@@ -54,7 +54,7 @@ class Rustpad {
   private ignoreChanges: boolean = false;
   private oldDecorations: string[] = [];
 
-  constructor(readonly options: RustpadOptions) {
+  constructor(readonly options: KolabpadOptions) {
     this.model = options.editor.getModel()!;
     this.onChangeHandle = options.editor.onDidChangeModelContent((e) =>
       this.onChange(e),
@@ -87,7 +87,7 @@ class Rustpad {
     );
   }
 
-  /** Destroy this Rustpad instance and close any sockets. */
+  /** Destroy this Kolabpad instance and close any sockets. */
   dispose() {
     window.clearInterval(this.tryConnectId);
     window.clearInterval(this.resetFailuresId);
@@ -506,4 +506,4 @@ function generateCssStyles(hue: number) {
   }
 }
 
-export default Rustpad;
+export default Kolabpad;

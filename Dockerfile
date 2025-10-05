@@ -34,6 +34,9 @@ COPY frontend/ ./
 COPY --from=wasm /app/ot.wasm ./public/
 COPY --from=wasm /app/wasm_exec.js ./public/
 
+# Copy Go server source for "Load Sample" feature
+COPY pkg/server/kolabpad.go ../pkg/server/kolabpad.go
+
 # Build frontend
 RUN npm run build
 
