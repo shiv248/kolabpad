@@ -8,42 +8,67 @@ import (
 	"os/signal"
 	"strconv"
 	"syscall"
+	"time"
 
 	"github.com/shiv/kolabpad/pkg/database"
+	"github.com/shiv/kolabpad/pkg/logger"
 	"github.com/shiv/kolabpad/pkg/server"
 )
 
-func main() {
-	// Load configuration from environment
-	port := getEnv("PORT", "3030")
-	expiryDays := getEnvInt("EXPIRY_DAYS", 1)
-	sqliteURI := os.Getenv("SQLITE_URI")
+// Config holds all server configuration
+type Config struct {
+	Port                  string
+	ExpiryDays            int
+	SQLiteURI             string
+	CleanupInterval       time.Duration
+	MaxDocumentSize       int
+	WSReadTimeout         time.Duration
+	WSWriteTimeout        time.Duration
+	BroadcastBufferSize   int
+}
 
-	log.Printf("Starting Kolabpad server...")
-	log.Printf("Port: %s", port)
-	log.Printf("Document expiry: %d days", expiryDays)
+func main() {
+	// Initialize logger
+	logger.Init()
+
+	// Load configuration from environment
+	config := Config{
+		Port:                getEnv("PORT", "3030"),
+		ExpiryDays:          getEnvInt("EXPIRY_DAYS", 7),
+		SQLiteURI:           os.Getenv("SQLITE_URI"),
+		CleanupInterval:     time.Duration(getEnvInt("CLEANUP_INTERVAL_HOURS", 1)) * time.Hour,
+		MaxDocumentSize:     getEnvInt("MAX_DOCUMENT_SIZE_KB", 256) * 1024, // Convert KB to bytes
+		WSReadTimeout:       time.Duration(getEnvInt("WS_READ_TIMEOUT_MINUTES", 30)) * time.Minute,
+		WSWriteTimeout:      time.Duration(getEnvInt("WS_WRITE_TIMEOUT_SECONDS", 10)) * time.Second,
+		BroadcastBufferSize: getEnvInt("BROADCAST_BUFFER_SIZE", 16),
+	}
+
+	logger.Info("Starting Kolabpad server...")
+	logger.Info("Port: %s", config.Port)
+	logger.Info("Document expiry: %d days", config.ExpiryDays)
 
 	// Initialize database if configured
 	var db *database.Database
-	if sqliteURI != "" {
-		log.Printf("Database: %s", sqliteURI)
+	if config.SQLiteURI != "" {
+		logger.Info("Database: %s", config.SQLiteURI)
 		var err error
-		db, err = database.New(sqliteURI)
+		db, err = database.New(config.SQLiteURI)
 		if err != nil {
+			logger.Error("Failed to initialize database: %v", err)
 			log.Fatalf("Failed to initialize database: %v", err)
 		}
 		defer db.Close()
 	} else {
-		log.Printf("Database: disabled (in-memory only)")
+		logger.Info("Database: disabled (in-memory only)")
 	}
 
-	// Create server
-	srv := server.NewServer(db)
+	// Create server with config
+	srv := server.NewServer(db, config.MaxDocumentSize, config.BroadcastBufferSize, config.WSReadTimeout, config.WSWriteTimeout)
 
 	// Start cleanup task
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go srv.StartCleaner(ctx, expiryDays)
+	go srv.StartCleaner(ctx, config.ExpiryDays, config.CleanupInterval)
 
 	// Handle graceful shutdown
 	sigChan := make(chan os.Signal, 1)
@@ -51,14 +76,14 @@ func main() {
 
 	go func() {
 		<-sigChan
-		log.Println("Shutting down...")
+		logger.Info("Shutting down...")
 		cancel()
 		srv.Shutdown(ctx)
 		os.Exit(0)
 	}()
 
 	// Start server
-	addr := fmt.Sprintf(":%s", port)
+	addr := fmt.Sprintf(":%s", config.Port)
 	log.Fatal(srv.ListenAndServe(addr))
 }
 

@@ -23,6 +23,10 @@ RUN cp $(go env GOROOT)/misc/wasm/wasm_exec.js .
 FROM node:18-alpine AS frontend
 WORKDIR /app
 
+# Accept build arguments
+ARG LOG_LEVEL=info
+ARG VITE_SHA
+
 # Install dependencies
 COPY frontend/package*.json ./
 RUN npm ci
@@ -37,7 +41,9 @@ COPY --from=wasm /app/wasm_exec.js ./public/
 # Copy Go server source for "Load Sample" feature
 COPY pkg/server/kolabpad.go ../pkg/server/kolabpad.go
 
-# Build frontend
+# Build frontend - ENV vars will be read by vite.config.ts from ARG
+ENV LOG_LEVEL=${LOG_LEVEL}
+ENV VITE_SHA=${VITE_SHA}
 RUN npm run build
 
 # Stage 3: Build Go backend server

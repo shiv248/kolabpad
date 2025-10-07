@@ -4,6 +4,7 @@ import type {
   IPosition,
   editor,
 } from "monaco-editor/esm/vs/editor/editor.api";
+import { logger } from "./logger";
 
 // OpSeq is loaded from Go WASM (global variable set by cmd/ot-wasm)
 declare const OpSeq: any;
@@ -161,32 +162,40 @@ class Kolabpad {
   private handleMessage(msg: ServerMsg) {
     if (msg.Identity !== undefined) {
       this.me = msg.Identity;
+      logger.debug("[Identity] Assigned ID:", this.me);
     } else if (msg.History !== undefined) {
       const { start, operations } = msg.History;
+      logger.debug(`[History] Received ${operations.length} operations from revision ${start}`);
       if (start > this.revision) {
-        console.warn("History message has start greater than last operation.");
+        logger.warn("History message has start greater than last operation.");
         this.ws?.close();
         return;
       }
       for (let i = this.revision - start; i < operations.length; i++) {
         let { id, operation } = operations[i];
+        const rawOp = operation;
         this.revision++;
         if (id === this.me) {
+          logger.debug(`[History] Rev ${this.revision}: Our operation acknowledged (user=${id})`);
           this.serverAck();
         } else {
           operation = OpSeq.from_str(JSON.stringify(operation));
+          logger.debug(`[History] Rev ${this.revision}: Remote operation from user ${id}:`, this.formatOperation(rawOp));
           this.applyServer(operation);
         }
       }
     } else if (msg.Language !== undefined) {
+      logger.debug(`[Language] Changed to: ${msg.Language}`);
       this.options.onChangeLanguage?.(msg.Language);
     } else if (msg.UserInfo !== undefined) {
       const { id, info } = msg.UserInfo;
       if (id !== this.me) {
         this.users = { ...this.users };
         if (info) {
+          logger.debug(`[UserInfo] User ${id} joined: ${info.name} (hue=${info.hue})`);
           this.users[id] = info;
         } else {
+          logger.debug(`[UserInfo] User ${id} left`);
           delete this.users[id];
           delete this.userCursors[id];
         }
@@ -196,6 +205,7 @@ class Kolabpad {
     } else if (msg.UserCursor !== undefined) {
       const { id, data } = msg.UserCursor;
       if (id !== this.me) {
+        logger.debug(`[UserCursor] User ${id}: cursors=${data.cursors}, selections=${JSON.stringify(data.selections)}`);
         this.userCursors[id] = data;
         this.updateCursors();
       }
@@ -204,37 +214,54 @@ class Kolabpad {
 
   private serverAck() {
     if (!this.outstanding) {
-      console.warn("Received serverAck with no outstanding operation.");
+      logger.warn("Received serverAck with no outstanding operation.");
       return;
     }
+    logger.debug(`[ServerAck] Outstanding cleared, buffer=${this.buffer ? 'pending' : 'none'}`);
     this.outstanding = this.buffer;
     this.buffer = undefined;
     if (this.outstanding) {
+      logger.debug(`[ServerAck] Sending buffered operation:`, this.formatOperation(JSON.parse(this.outstanding.to_string())));
       this.sendOperation(this.outstanding);
     }
   }
 
   private applyServer(operation: OpSeq) {
+    const fullDoc = this.model.getValue();
+    const beforeDoc = fullDoc.slice(0, 50);
+    const beforeTruncated = fullDoc.length > 50;
+
     if (this.outstanding) {
+      logger.debug(`[ApplyServer] Transforming against outstanding operation`);
       const pair = this.outstanding.transform(operation)!;
       this.outstanding = pair.first();
       operation = pair.second();
       if (this.buffer) {
+        logger.debug(`[ApplyServer] Transforming against buffered operation`);
         const pair = this.buffer.transform(operation)!;
         this.buffer = pair.first();
         operation = pair.second();
       }
     }
+    logger.debug(`[ApplyServer] Applying to document (before): "${beforeDoc}${beforeTruncated ? '...' : ''}"`);
     this.applyOperation(operation);
+    const fullDocAfter = this.model.getValue();
+    const afterDoc = fullDocAfter.slice(0, 50);
+    const afterTruncated = fullDocAfter.length > 50;
+    logger.debug(`[ApplyServer] Applied (after): "${afterDoc}${afterTruncated ? '...' : ''}"`);
   }
 
   private applyClient(operation: OpSeq) {
+    const opDetails = this.formatOperation(JSON.parse(operation.to_string()));
     if (!this.outstanding) {
+      logger.debug(`[ApplyClient] Sending operation (no outstanding):`, opDetails);
       this.sendOperation(operation);
       this.outstanding = operation;
     } else if (!this.buffer) {
+      logger.debug(`[ApplyClient] Buffering operation (outstanding exists):`, opDetails);
       this.buffer = operation;
     } else {
+      logger.debug(`[ApplyClient] Composing with buffer:`, opDetails);
       this.buffer = this.buffer.compose(operation);
     }
     this.transformCursors(operation);
@@ -242,6 +269,7 @@ class Kolabpad {
 
   private sendOperation(operation: OpSeq) {
     const op = operation.to_string();
+    logger.debug(`[SendOperation] Sending at revision ${this.revision}:`, this.formatOperation(JSON.parse(op)));
     this.ws?.send(`{"Edit":{"revision":${this.revision},"operation":${op}}}`);
   }
 
@@ -428,6 +456,25 @@ class Kolabpad {
       unicodeOffset(this.model, s.getStartPosition()),
       unicodeOffset(this.model, s.getEndPosition()),
     ]);
+  }
+
+  /** Format an operation for readable debug output */
+  private formatOperation(ops: (string | number)[]): string {
+    const parts: string[] = [];
+    for (const op of ops) {
+      if (typeof op === "string") {
+        // Insert
+        const preview = op.length > 20 ? op.slice(0, 20) + "..." : op;
+        parts.push(`Insert("${preview}", ${op.length} chars)`);
+      } else if (op >= 0) {
+        // Retain
+        parts.push(`Retain(${op})`);
+      } else {
+        // Delete
+        parts.push(`Delete(${-op})`);
+      }
+    }
+    return parts.join(", ");
   }
 }
 

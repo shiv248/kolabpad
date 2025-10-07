@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"sync"
 	"time"
 
@@ -12,6 +11,7 @@ import (
 	"nhooyr.io/websocket/wsjson"
 
 	"github.com/shiv/kolabpad/internal/protocol"
+	"github.com/shiv/kolabpad/pkg/logger"
 )
 
 // readResult represents the result of a WebSocket read operation.
@@ -22,23 +22,27 @@ type readResult struct {
 
 // Connection represents a single client WebSocket connection.
 type Connection struct {
-	userID  uint64
-	kolabpad *Kolabpad
-	conn    *websocket.Conn
-	ctx     context.Context
-	cancel  context.CancelFunc
-	sendMu  sync.Mutex
+	userID       uint64
+	kolabpad      *Kolabpad
+	conn         *websocket.Conn
+	ctx          context.Context
+	cancel       context.CancelFunc
+	sendMu       sync.Mutex
+	readTimeout  time.Duration
+	writeTimeout time.Duration
 }
 
 // NewConnection creates a new client connection handler.
-func NewConnection(kolabpad *Kolabpad, conn *websocket.Conn) *Connection {
+func NewConnection(kolabpad *Kolabpad, conn *websocket.Conn, readTimeout, writeTimeout time.Duration) *Connection {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Connection{
-		userID:  kolabpad.NextUserID(),
-		kolabpad: kolabpad,
-		conn:    conn,
-		ctx:     ctx,
-		cancel:  cancel,
+		userID:       kolabpad.NextUserID(),
+		kolabpad:      kolabpad,
+		conn:         conn,
+		ctx:          ctx,
+		cancel:       cancel,
+		readTimeout:  readTimeout,
+		writeTimeout: writeTimeout,
 	}
 }
 
@@ -46,7 +50,7 @@ func NewConnection(kolabpad *Kolabpad, conn *websocket.Conn) *Connection {
 func (c *Connection) Handle(ctx context.Context) error {
 	defer c.cleanup()
 
-	log.Printf("connection! id = %d", c.userID)
+	logger.Info("User %d connected", c.userID)
 
 	// Send initial state to client
 	revision, err := c.sendInitial()
@@ -94,7 +98,8 @@ func (c *Connection) Handle(ctx context.Context) error {
 		case result := <-readChan:
 			if result.err != nil {
 				// Check if it's a normal close
-				if websocket.CloseStatus(result.err) == websocket.StatusNormalClosure {
+				status := websocket.CloseStatus(result.err)
+				if status == websocket.StatusNormalClosure || status == websocket.StatusGoingAway {
 					return nil
 				}
 				return fmt.Errorf("read message: %w", result.err)
@@ -102,7 +107,7 @@ func (c *Connection) Handle(ctx context.Context) error {
 
 			// Handle message
 			if err := c.handleMessage(&result.msg); err != nil {
-				log.Printf("error handling message from user %d: %v", c.userID, err)
+				logger.Error("Error handling message from user %d: %v", c.userID, err)
 				return err
 			}
 
@@ -115,11 +120,20 @@ func (c *Connection) Handle(ctx context.Context) error {
 
 // readMessage reads a message from the WebSocket in a separate goroutine.
 func (c *Connection) readMessage(ctx context.Context, result chan<- readResult) {
-	readCtx, readCancel := context.WithTimeout(ctx, 30*time.Minute)
+	readCtx, readCancel := context.WithTimeout(ctx, c.readTimeout)
 	defer readCancel()
 
 	var msg protocol.ClientMsg
 	err := wsjson.Read(readCtx, c.conn, &msg)
+
+	if err == nil {
+		logger.Debug("User %d received message: Edit=%v, SetLanguage=%v, ClientInfo=%v, CursorData=%v",
+			c.userID,
+			msg.Edit != nil,
+			msg.SetLanguage != nil,
+			msg.ClientInfo != nil,
+			msg.CursorData != nil)
+	}
 
 	result <- readResult{msg: msg, err: err}
 }
@@ -127,6 +141,7 @@ func (c *Connection) readMessage(ctx context.Context, result chan<- readResult) 
 // sendInitial sends the initial state to a newly connected client.
 func (c *Connection) sendInitial() (int, error) {
 	// Send Identity
+	logger.Debug("User %d sending Identity", c.userID)
 	if err := c.send(protocol.NewIdentityMsg(c.userID)); err != nil {
 		return 0, err
 	}
@@ -136,6 +151,7 @@ func (c *Connection) sendInitial() (int, error) {
 
 	// Send operation history
 	if len(ops) > 0 {
+		logger.Debug("User %d sending History: %d operations from revision 0", c.userID, len(ops))
 		if err := c.send(protocol.NewHistoryMsg(0, ops)); err != nil {
 			return 0, err
 		}
@@ -143,12 +159,14 @@ func (c *Connection) sendInitial() (int, error) {
 
 	// Send language
 	if lang != nil {
+		logger.Debug("User %d sending Language: %s", c.userID, *lang)
 		if err := c.send(protocol.NewLanguageMsg(*lang)); err != nil {
 			return 0, err
 		}
 	}
 
 	// Send all users
+	logger.Debug("User %d sending %d user(s)", c.userID, len(users))
 	for id, info := range users {
 		infoCopy := info
 		if err := c.send(protocol.NewUserInfoMsg(id, &infoCopy)); err != nil {
@@ -157,6 +175,7 @@ func (c *Connection) sendInitial() (int, error) {
 	}
 
 	// Send all cursors
+	logger.Debug("User %d sending %d cursor(s)", c.userID, len(cursors))
 	for id, data := range cursors {
 		if err := c.send(protocol.NewUserCursorMsg(id, data)); err != nil {
 			return 0, err
@@ -170,6 +189,7 @@ func (c *Connection) sendInitial() (int, error) {
 func (c *Connection) sendHistory(start int) (int, error) {
 	ops := c.kolabpad.GetHistory(start)
 	if len(ops) > 0 {
+		logger.Debug("User %d sending History: %d operations from revision %d", c.userID, len(ops), start)
 		if err := c.send(protocol.NewHistoryMsg(start, ops)); err != nil {
 			return start, err
 		}
@@ -181,6 +201,8 @@ func (c *Connection) sendHistory(start int) (int, error) {
 func (c *Connection) handleMessage(msg *protocol.ClientMsg) error {
 	if msg.Edit != nil {
 		// Apply edit operation
+		logger.Debug("User %d applying Edit at revision %d (base=%d, target=%d)",
+			c.userID, msg.Edit.Revision, msg.Edit.Operation.BaseLen(), msg.Edit.Operation.TargetLen())
 		if err := c.kolabpad.ApplyEdit(c.userID, msg.Edit.Revision, msg.Edit.Operation); err != nil {
 			return fmt.Errorf("apply edit: %w", err)
 		}
@@ -188,16 +210,19 @@ func (c *Connection) handleMessage(msg *protocol.ClientMsg) error {
 	}
 
 	if msg.SetLanguage != nil {
+		logger.Debug("User %d setting Language: %s", c.userID, *msg.SetLanguage)
 		c.kolabpad.SetLanguage(*msg.SetLanguage)
 		return nil
 	}
 
 	if msg.ClientInfo != nil {
+		logger.Debug("User %d setting ClientInfo: name=%s, hue=%d", c.userID, msg.ClientInfo.Name, msg.ClientInfo.Hue)
 		c.kolabpad.SetUserInfo(c.userID, *msg.ClientInfo)
 		return nil
 	}
 
 	if msg.CursorData != nil {
+		logger.Debug("User %d setting CursorData: %d cursors, %d selections", c.userID, len(msg.CursorData.Cursors), len(msg.CursorData.Selections))
 		c.kolabpad.SetCursorData(c.userID, *msg.CursorData)
 		return nil
 	}
@@ -218,8 +243,19 @@ func (c *Connection) broadcastUpdates(updates <-chan *protocol.ServerMsg, done c
 				// Channel closed, kolabpad killed
 				return
 			}
+			// Log what type of broadcast message
+			msgType := "Unknown"
+			if msg.Language != nil {
+				msgType = "Language"
+			} else if msg.UserInfo != nil {
+				msgType = "UserInfo"
+			} else if msg.UserCursor != nil {
+				msgType = "UserCursor"
+			}
+			logger.Debug("User %d broadcasting %s", c.userID, msgType)
+
 			if err := c.send(msg); err != nil {
-				log.Printf("error broadcasting to user %d: %v", c.userID, err)
+				logger.Error("Error broadcasting to user %d: %v", c.userID, err)
 				c.cancel()
 				return
 			}
@@ -237,14 +273,14 @@ func (c *Connection) send(msg *protocol.ServerMsg) error {
 		return fmt.Errorf("marshal: %w", err)
 	}
 
-	writeCtx, writeCancel := context.WithTimeout(c.ctx, 10*time.Second)
+	writeCtx, writeCancel := context.WithTimeout(c.ctx, c.writeTimeout)
 	defer writeCancel()
 	return c.conn.Write(writeCtx, websocket.MessageText, data)
 }
 
 // cleanup removes the user from the session.
 func (c *Connection) cleanup() {
-	log.Printf("disconnection, id = %d", c.userID)
+	logger.Info("User %d disconnected", c.userID)
 	c.kolabpad.RemoveUser(c.userID)
 	c.cancel()
 }

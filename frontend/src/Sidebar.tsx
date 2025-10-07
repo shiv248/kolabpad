@@ -18,7 +18,7 @@ import { VscRepo } from "react-icons/vsc";
 import ConnectionStatus from "./ConnectionStatus";
 import User from "./User";
 import languages from "./languages.json";
-import type { UserInfo } from "./rustpad";
+import type { UserInfo } from "./kolabpad";
 
 export type SidebarProps = {
   documentId: string;
@@ -143,19 +143,28 @@ function Sidebar({
         About
       </Heading>
       <Text fontSize="sm" mb={1.5}>
-        <strong>Rustpad</strong> is an open-source collaborative text editor
-        based on the <em>operational transformation</em> algorithm.
+        <strong>Kolabpad</strong> is an open-source collaborative text editor
+        based on the{" "}
+        <Link
+          color="blue.600"
+          fontWeight="semibold"
+          href="http://github.com/shiv248/operational-transformation-go"
+          isExternal
+        >
+          Operational Transformation
+        </Link>{" "}
+        algorithm.
       </Text>
       <Text fontSize="sm" mb={1.5}>
         Share a link to this pad with others, and they can edit from their
         browser while seeing your changes in real time.
       </Text>
       <Text fontSize="sm" mb={1.5}>
-        Built using Rust and TypeScript. See the{" "}
+        Built using Golang and TypeScript. See the{" "}
         <Link
           color="blue.600"
           fontWeight="semibold"
-          href="https://github.com/ekzhang/rustpad"
+          href="http://github.com/shiv248/kolabpad"
           isExternal
         >
           GitHub repository

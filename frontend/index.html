@@ -21,15 +21,18 @@
     <div id="root"></div>
     <!-- Load Go WASM runtime -->
     <script src="/wasm_exec.js"></script>
-    <script>
+    <script type="module">
+      import { logger } from '/src/logger.ts';
+
       // Load and initialize Go WASM module
       const go = new Go();
       WebAssembly.instantiateStreaming(fetch('/ot.wasm'), go.importObject)
         .then(result => {
           go.run(result.instance);
+          logger.info('WASM OT module loaded');
         })
         .catch(err => {
-          console.error('Failed to load WASM:', err);
+          logger.error('Failed to load WASM:', err);
         });
     </script>
     <script type="module" src="/src/index.tsx"></script>

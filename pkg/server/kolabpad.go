@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 
 	"github.com/shiv/kolabpad/internal/protocol"
+	"github.com/shiv/kolabpad/pkg/logger"
 	"github.com/shiv/kolabpad/pkg/ot"
 )
 
@@ -21,16 +22,18 @@ type State struct {
 
 // Kolabpad is the main collaborative editing session manager.
 type Kolabpad struct {
-	state       *State
-	mu          sync.RWMutex
-	count       atomic.Uint64                         // User ID counter
-	killed      atomic.Bool                           // Document destruction flag
-	subscribers map[uint64]chan *protocol.ServerMsg  // Per-connection channels for metadata broadcasts
-	notify      chan struct{}                         // Closed to wake all connections when new operations arrive
+	state               *State
+	mu                  sync.RWMutex
+	count               atomic.Uint64                         // User ID counter
+	killed              atomic.Bool                           // Document destruction flag
+	subscribers         map[uint64]chan *protocol.ServerMsg  // Per-connection channels for metadata broadcasts
+	notify              chan struct{}                         // Closed to wake all connections when new operations arrive
+	maxDocumentSize     int                                   // Maximum document size in bytes
+	broadcastBufferSize int                                   // Buffer size for metadata broadcast channels
 }
 
 // NewKolabpad creates a new collaborative editing session.
-func NewKolabpad() *Kolabpad {
+func NewKolabpad(maxDocumentSize, broadcastBufferSize int) *Kolabpad {
 	return &Kolabpad{
 		state: &State{
 			Operations: make([]protocol.UserOperation, 0),
@@ -39,14 +42,16 @@ func NewKolabpad() *Kolabpad {
 			Users:      make(map[uint64]protocol.UserInfo),
 			Cursors:    make(map[uint64]protocol.CursorData),
 		},
-		subscribers: make(map[uint64]chan *protocol.ServerMsg),
-		notify:      make(chan struct{}),
+		subscribers:         make(map[uint64]chan *protocol.ServerMsg),
+		notify:              make(chan struct{}),
+		maxDocumentSize:     maxDocumentSize,
+		broadcastBufferSize: broadcastBufferSize,
 	}
 }
 
 // FromPersistedDocument creates a Kolabpad instance from a persisted document.
-func FromPersistedDocument(text string, language *string) *Kolabpad {
-	r := NewKolabpad()
+func FromPersistedDocument(text string, language *string, maxDocumentSize, broadcastBufferSize int) *Kolabpad {
+	r := NewKolabpad(maxDocumentSize, broadcastBufferSize)
 
 	// Create an initial insert operation for the loaded text
 	if text != "" {
@@ -117,7 +122,7 @@ func (r *Kolabpad) Subscribe(userID uint64) <-chan *protocol.ServerMsg {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	ch := make(chan *protocol.ServerMsg, 16)
+	ch := make(chan *protocol.ServerMsg, r.broadcastBufferSize)
 	r.subscribers[userID] = ch
 	return ch
 }
@@ -204,6 +209,10 @@ func (r *Kolabpad) ApplyEdit(userID uint64, revision int, operation *ot.Operatio
 	defer r.mu.Unlock()
 
 	currentLen := len(r.state.Operations)
+	oldTextLen := len(r.state.Text)
+
+	logger.Debug("ApplyEdit: user=%d, revision=%d/%d, op(base=%d, target=%d), docLen=%d",
+		userID, revision, currentLen, operation.BaseLen(), operation.TargetLen(), oldTextLen)
 
 	// Validate revision
 	if revision > currentLen {
@@ -212,6 +221,10 @@ func (r *Kolabpad) ApplyEdit(userID uint64, revision int, operation *ot.Operatio
 
 	// Transform against all operations since the client's revision
 	transformed := operation
+	transformCount := len(r.state.Operations[revision:])
+	if transformCount > 0 {
+		logger.Debug("ApplyEdit: transforming against %d historical operation(s)", transformCount)
+	}
 	for _, histOp := range r.state.Operations[revision:] {
 		aPrime, _, err := transformed.Transform(histOp.Operation)
 		if err != nil {
@@ -220,9 +233,9 @@ func (r *Kolabpad) ApplyEdit(userID uint64, revision int, operation *ot.Operatio
 		transformed = aPrime
 	}
 
-	// Enforce size limit (256 KiB)
-	if transformed.TargetLen() > 256*1024 {
-		return fmt.Errorf("target length %d exceeds 256 KiB maximum", transformed.TargetLen())
+	// Enforce size limit
+	if int(transformed.TargetLen()) > r.maxDocumentSize {
+		return fmt.Errorf("target length %d exceeds maximum of %d bytes", transformed.TargetLen(), r.maxDocumentSize)
 	}
 
 	// Apply operation to text
@@ -230,6 +243,9 @@ func (r *Kolabpad) ApplyEdit(userID uint64, revision int, operation *ot.Operatio
 	if err != nil {
 		return fmt.Errorf("apply failed: %w", err)
 	}
+
+	logger.Debug("ApplyEdit: text changed from %d to %d bytes, notifying %d connection(s)",
+		oldTextLen, len(newText), len(r.subscribers))
 
 	// Transform all user cursors
 	for id, cursorData := range r.state.Cursors {

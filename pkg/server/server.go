@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"log"
 	"math/rand"
 	"net/http"
 	"sync"
@@ -12,6 +11,7 @@ import (
 	"nhooyr.io/websocket"
 
 	"github.com/shiv/kolabpad/pkg/database"
+	"github.com/shiv/kolabpad/pkg/logger"
 )
 
 // Document represents a document entry in the server map.
@@ -22,16 +22,24 @@ type Document struct {
 
 // ServerState holds all server-wide state.
 type ServerState struct {
-	documents sync.Map // map[string]*Document
-	startTime time.Time
-	db        *database.Database // Optional database
+	documents           sync.Map // map[string]*Document
+	startTime           time.Time
+	db                  *database.Database // Optional database
+	maxDocumentSize     int
+	broadcastBufferSize int
+	wsReadTimeout       time.Duration
+	wsWriteTimeout      time.Duration
 }
 
 // NewServerState creates a new server state.
-func NewServerState(db *database.Database) *ServerState {
+func NewServerState(db *database.Database, maxDocumentSize, broadcastBufferSize int, wsReadTimeout, wsWriteTimeout time.Duration) *ServerState {
 	return &ServerState{
-		startTime: time.Now(),
-		db:        db,
+		startTime:           time.Now(),
+		db:                  db,
+		maxDocumentSize:     maxDocumentSize,
+		broadcastBufferSize: broadcastBufferSize,
+		wsReadTimeout:       wsReadTimeout,
+		wsWriteTimeout:      wsWriteTimeout,
 	}
 }
 
@@ -49,9 +57,9 @@ type Server struct {
 }
 
 // NewServer creates a new HTTP server.
-func NewServer(db *database.Database) *Server {
+func NewServer(db *database.Database, maxDocumentSize, broadcastBufferSize int, wsReadTimeout, wsWriteTimeout time.Duration) *Server {
 	s := &Server{
-		state: NewServerState(db),
+		state: NewServerState(db, maxDocumentSize, broadcastBufferSize, wsReadTimeout, wsWriteTimeout),
 		mux:   http.NewServeMux(),
 	}
 
@@ -82,7 +90,7 @@ func (s *Server) handleSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("WebSocket connection request for document: %s", docID)
+	logger.Info("WebSocket connection request for document: %s", docID)
 
 	// Get or create document
 	doc := s.getOrCreateDocument(docID)
@@ -98,14 +106,14 @@ func (s *Server) handleSocket(w http.ResponseWriter, r *http.Request) {
 		CompressionMode: websocket.CompressionDisabled,
 	})
 	if err != nil {
-		log.Printf("WebSocket upgrade failed: %v", err)
+		logger.Error("WebSocket upgrade failed: %v", err)
 		return
 	}
 
 	// Handle connection
-	connHandler := NewConnection(doc.Kolabpad, conn)
+	connHandler := NewConnection(doc.Kolabpad, conn, s.state.wsReadTimeout, s.state.wsWriteTimeout)
 	if err := connHandler.Handle(r.Context()); err != nil {
-		log.Printf("Connection error: %v", err)
+		logger.Error("Connection error: %v", err)
 	}
 
 	conn.Close(websocket.StatusNormalClosure, "")
@@ -133,7 +141,7 @@ func (s *Server) handleText(w http.ResponseWriter, r *http.Request) {
 	if s.state.db != nil {
 		doc, err := s.state.db.Load(docID)
 		if err != nil {
-			log.Printf("Error loading document from DB: %v", err)
+			logger.Error("Error loading document from DB: %v", err)
 		} else if doc != nil {
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 			w.Write([]byte(doc.Text))
@@ -185,14 +193,14 @@ func (s *Server) getOrCreateDocument(id string) *Document {
 	var kolabpad *Kolabpad
 	if s.state.db != nil {
 		if persisted, err := s.state.db.Load(id); err == nil && persisted != nil {
-			log.Printf("Loaded document %s from database", id)
-			kolabpad = FromPersistedDocument(persisted.Text, persisted.Language)
+			logger.Debug("Loaded document %s from database", id)
+			kolabpad = FromPersistedDocument(persisted.Text, persisted.Language, s.state.maxDocumentSize, s.state.broadcastBufferSize)
 		}
 	}
 
 	// Create new document if not in database
 	if kolabpad == nil {
-		kolabpad = NewKolabpad()
+		kolabpad = NewKolabpad(s.state.maxDocumentSize, s.state.broadcastBufferSize)
 	}
 
 	doc := &Document{
@@ -206,8 +214,8 @@ func (s *Server) getOrCreateDocument(id string) *Document {
 }
 
 // StartCleaner starts the background document cleanup task.
-func (s *Server) StartCleaner(ctx context.Context, expiryDays int) {
-	ticker := time.NewTicker(1 * time.Hour)
+func (s *Server) StartCleaner(ctx context.Context, expiryDays int, cleanupInterval time.Duration) {
+	ticker := time.NewTicker(cleanupInterval)
 	defer ticker.Stop()
 
 	for {
@@ -237,7 +245,7 @@ func (s *Server) cleanupExpiredDocuments(expiryDays int) {
 	})
 
 	if len(toDelete) > 0 {
-		log.Printf("cleaner removing documents: %v", toDelete)
+		logger.Debug("cleaner removing documents: %v", toDelete)
 		for _, id := range toDelete {
 			if val, ok := s.state.documents.LoadAndDelete(id); ok {
 				doc := val.(*Document)
@@ -249,7 +257,7 @@ func (s *Server) cleanupExpiredDocuments(expiryDays int) {
 
 // ListenAndServe starts the HTTP server.
 func (s *Server) ListenAndServe(addr string) error {
-	log.Printf("Server listening on %s", addr)
+	logger.Info("Server listening on %s", addr)
 	return http.ListenAndServe(addr, s)
 }
 
@@ -299,9 +307,9 @@ func (s *Server) persister(ctx context.Context, id string, kolabpad *Kolabpad) {
 				Language: language,
 			}
 
-			log.Printf("persisting revision %d for id = %s", revision, id)
+			logger.Debug("persisting revision %d for id = %s", revision, id)
 			if err := s.state.db.Store(doc); err != nil {
-				log.Printf("error persisting document %s: %v", id, err)
+				logger.Error("error persisting document %s: %v", id, err)
 			} else {
 				lastRevision = revision
 			}
