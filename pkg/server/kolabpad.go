@@ -21,11 +21,12 @@ type State struct {
 
 // Kolabpad is the main collaborative editing session manager.
 type Kolabpad struct {
-	state   *State
-	mu      sync.RWMutex
-	count   atomic.Uint64       // User ID counter
-	killed  atomic.Bool         // Document destruction flag
-	updates chan *protocol.ServerMsg // Broadcast channel for metadata updates
+	state       *State
+	mu          sync.RWMutex
+	count       atomic.Uint64                         // User ID counter
+	killed      atomic.Bool                           // Document destruction flag
+	subscribers map[uint64]chan *protocol.ServerMsg  // Per-connection channels for metadata broadcasts
+	notify      chan struct{}                         // Closed to wake all connections when new operations arrive
 }
 
 // NewKolabpad creates a new collaborative editing session.
@@ -38,7 +39,8 @@ func NewKolabpad() *Kolabpad {
 			Users:      make(map[uint64]protocol.UserInfo),
 			Cursors:    make(map[uint64]protocol.CursorData),
 		},
-		updates: make(chan *protocol.ServerMsg, 16),
+		subscribers: make(map[uint64]chan *protocol.ServerMsg),
+		notify:      make(chan struct{}),
 	}
 }
 
@@ -90,10 +92,18 @@ func (r *Kolabpad) Snapshot() (text string, language *string) {
 	return r.state.Text, r.state.Language
 }
 
-// Kill marks this document as killed and closes the update channel.
+// Kill marks this document as killed and closes channels to disconnect all clients.
 func (r *Kolabpad) Kill() {
 	if r.killed.CompareAndSwap(false, true) {
-		close(r.updates)
+		r.mu.Lock()
+		// Close all subscriber channels
+		for _, ch := range r.subscribers {
+			close(ch)
+		}
+		r.subscribers = make(map[uint64]chan *protocol.ServerMsg)
+		// Close notify channel to wake all connections
+		close(r.notify)
+		r.mu.Unlock()
 	}
 }
 
@@ -102,9 +112,46 @@ func (r *Kolabpad) Killed() bool {
 	return r.killed.Load()
 }
 
-// Updates returns the channel for receiving metadata updates.
-func (r *Kolabpad) Updates() <-chan *protocol.ServerMsg {
-	return r.updates
+// Subscribe creates a new channel for receiving metadata updates.
+func (r *Kolabpad) Subscribe(userID uint64) <-chan *protocol.ServerMsg {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	ch := make(chan *protocol.ServerMsg, 16)
+	r.subscribers[userID] = ch
+	return ch
+}
+
+// Unsubscribe removes a channel from receiving metadata updates.
+func (r *Kolabpad) Unsubscribe(userID uint64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if ch, ok := r.subscribers[userID]; ok {
+		close(ch)
+		delete(r.subscribers, userID)
+	}
+}
+
+// NotifyChannel returns the current notify channel for operation broadcasts.
+func (r *Kolabpad) NotifyChannel() <-chan struct{} {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.notify
+}
+
+// broadcast sends a message to all subscribers (non-blocking).
+func (r *Kolabpad) broadcast(msg *protocol.ServerMsg) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	for _, ch := range r.subscribers {
+		select {
+		case ch <- msg:
+		default:
+			// Skip if subscriber channel is full
+		}
+	}
 }
 
 // GetInitialState returns the initial state to send to a connecting client.
@@ -212,6 +259,13 @@ func (r *Kolabpad) ApplyEdit(userID uint64, revision int, operation *ot.Operatio
 	})
 	r.state.Text = newText
 
+	// Notify all connections of new operation (broadcast by closing and recreating channel)
+	// Only do this if document hasn't been killed
+	if !r.killed.Load() {
+		close(r.notify)
+		r.notify = make(chan struct{})
+	}
+
 	return nil
 }
 
@@ -222,10 +276,7 @@ func (r *Kolabpad) SetLanguage(lang string) {
 	r.mu.Unlock()
 
 	// Broadcast to all clients
-	select {
-	case r.updates <- protocol.NewLanguageMsg(lang):
-	default:
-	}
+	r.broadcast(protocol.NewLanguageMsg(lang))
 }
 
 // SetUserInfo updates a user's display information.
@@ -235,10 +286,7 @@ func (r *Kolabpad) SetUserInfo(userID uint64, info protocol.UserInfo) {
 	r.mu.Unlock()
 
 	// Broadcast to all clients
-	select {
-	case r.updates <- protocol.NewUserInfoMsg(userID, &info):
-	default:
-	}
+	r.broadcast(protocol.NewUserInfoMsg(userID, &info))
 }
 
 // SetCursorData updates a user's cursor positions.
@@ -248,10 +296,7 @@ func (r *Kolabpad) SetCursorData(userID uint64, data protocol.CursorData) {
 	r.mu.Unlock()
 
 	// Broadcast to all clients
-	select {
-	case r.updates <- protocol.NewUserCursorMsg(userID, data):
-	default:
-	}
+	r.broadcast(protocol.NewUserCursorMsg(userID, data))
 }
 
 // RemoveUser removes a user from the session.
@@ -261,11 +306,11 @@ func (r *Kolabpad) RemoveUser(userID uint64) {
 	delete(r.state.Cursors, userID)
 	r.mu.Unlock()
 
+	// Unsubscribe from updates
+	r.Unsubscribe(userID)
+
 	// Broadcast disconnection
-	select {
-	case r.updates <- protocol.NewUserInfoMsg(userID, nil):
-	default:
-	}
+	r.broadcast(protocol.NewUserInfoMsg(userID, nil))
 }
 
 // transformIndex transforms a cursor position through an operation.

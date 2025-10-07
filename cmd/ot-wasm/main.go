@@ -4,14 +4,33 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
+	"sync"
 	"syscall/js"
 
 	"github.com/shiv/kolabpad/pkg/ot"
 )
 
+// Global registry to store Go OpSeq pointers
+var (
+	opSeqRegistry = make(map[int]*ot.OperationSeq)
+	opSeqCounter  = 0
+	opSeqMutex    sync.Mutex
+)
+
 // wrapOpSeq creates a JavaScript-compatible wrapper around Go OpSeq
 func wrapOpSeq(op *ot.OperationSeq) js.Value {
+	// Store the OpSeq in the registry and get an ID
+	opSeqMutex.Lock()
+	opSeqCounter++
+	id := opSeqCounter
+	opSeqRegistry[id] = op
+	opSeqMutex.Unlock()
+
 	obj := make(map[string]interface{})
+
+	// Store the ID so we can unwrap later
+	obj["__opseq_id"] = id
 
 	// delete(n) - delete n characters
 	obj["delete"] = js.FuncOf(func(this js.Value, args []js.Value) interface{} {
@@ -40,14 +59,19 @@ func wrapOpSeq(op *ot.OperationSeq) js.Value {
 	// compose(other) - compose with another operation
 	obj["compose"] = js.FuncOf(func(this js.Value, args []js.Value) interface{} {
 		if len(args) == 0 {
+			fmt.Println("compose error: no arguments provided")
 			return nil
 		}
 		otherOp := unwrapOpSeq(args[0])
 		if otherOp == nil {
+			fmt.Println("compose error: failed to unwrap other operation")
 			return nil
 		}
 		result, err := op.Compose(otherOp)
 		if err != nil {
+			fmt.Printf("compose error: %v\n", err)
+			fmt.Printf("  op: base=%d, target=%d\n", op.BaseLen(), op.TargetLen())
+			fmt.Printf("  other: base=%d, target=%d\n", otherOp.BaseLen(), otherOp.TargetLen())
 			return nil
 		}
 		return wrapOpSeq(result)
@@ -56,14 +80,19 @@ func wrapOpSeq(op *ot.OperationSeq) js.Value {
 	// transform(other) - returns OpSeqPair with .first() and .second()
 	obj["transform"] = js.FuncOf(func(this js.Value, args []js.Value) interface{} {
 		if len(args) == 0 {
+			fmt.Println("transform error: no arguments provided")
 			return nil
 		}
 		otherOp := unwrapOpSeq(args[0])
 		if otherOp == nil {
+			fmt.Println("transform error: failed to unwrap other operation")
 			return nil
 		}
 		aPrime, bPrime, err := op.Transform(otherOp)
 		if err != nil {
+			fmt.Printf("transform error: %v\n", err)
+			fmt.Printf("  op A: base=%d, target=%d\n", op.BaseLen(), op.TargetLen())
+			fmt.Printf("  op B: base=%d, target=%d\n", otherOp.BaseLen(), otherOp.TargetLen())
 			return nil
 		}
 
@@ -139,20 +168,21 @@ func wrapOpSeq(op *ot.OperationSeq) js.Value {
 
 // unwrapOpSeq extracts OpSeq from JavaScript wrapper
 func unwrapOpSeq(jsVal js.Value) *ot.OperationSeq {
-	// Get the __opseq internal property
+	// Get the __opseq_id property
 	if jsVal.Type() == js.TypeObject {
-		internal := jsVal.Get("__opseq")
-		if internal.Type() != js.TypeUndefined {
-			// This is a wrapped OpSeq, extract the Go pointer
-			// For now, we'll use a different approach - deserialize from JSON
-			toString := jsVal.Get("to_string")
-			if toString.Type() == js.TypeFunction {
-				jsonStr := toString.Invoke().String()
-				op, _ := ot.FromJSON(jsonStr)
+		idVal := jsVal.Get("__opseq_id")
+		if idVal.Type() == js.TypeNumber {
+			id := idVal.Int()
+			opSeqMutex.Lock()
+			op := opSeqRegistry[id]
+			opSeqMutex.Unlock()
+			if op != nil {
 				return op
 			}
 		}
 	}
+
+	fmt.Println("unwrapOpSeq failed: could not find __opseq_id or operation not in registry")
 	return nil
 }
 
@@ -221,8 +251,6 @@ func main() {
 
 	// Export OpSeq to global scope
 	js.Global().Set("OpSeq", js.ValueOf(opseqConstructor))
-
-	println("Go WASM OT module loaded successfully!")
 
 	// Keep the Go program running
 	<-make(chan bool)

@@ -14,6 +14,12 @@ import (
 	"github.com/shiv/kolabpad/internal/protocol"
 )
 
+// readResult represents the result of a WebSocket read operation.
+type readResult struct {
+	msg protocol.ClientMsg
+	err error
+}
+
 // Connection represents a single client WebSocket connection.
 type Connection struct {
 	userID  uint64
@@ -48,18 +54,25 @@ func (c *Connection) Handle(ctx context.Context) error {
 		return fmt.Errorf("send initial: %w", err)
 	}
 
+	// Subscribe to metadata updates
+	updates := c.kolabpad.Subscribe(c.userID)
+
 	// Start update broadcaster
 	updatesDone := make(chan struct{})
-	go c.broadcastUpdates(updatesDone)
+	go c.broadcastUpdates(updates, updatesDone)
+
+	// Start first read
+	readChan := make(chan readResult, 1)
+	go c.readMessage(ctx, readChan)
 
 	// Main message loop
 	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-c.ctx.Done():
-			return c.ctx.Err()
-		default:
+		// Get current notify channel (before checking revision to avoid race)
+		notified := c.kolabpad.NotifyChannel()
+
+		// Check if document has been killed
+		if c.kolabpad.Killed() {
+			return nil
 		}
 
 		// Check for new history to send
@@ -71,25 +84,44 @@ func (c *Connection) Handle(ctx context.Context) error {
 			revision = newRev
 		}
 
-		// Read client message with timeout
-		readCtx, readCancel := context.WithTimeout(ctx, 30*time.Second)
-		var msg protocol.ClientMsg
-		err := wsjson.Read(readCtx, c.conn, &msg)
-		readCancel()
-		if err != nil {
-			// Check if it's a normal close
-			if websocket.CloseStatus(err) == websocket.StatusNormalClosure {
-				return nil
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-c.ctx.Done():
+			return c.ctx.Err()
+		case <-notified:
+			// Notify channel closed, new operation available - loop to check revision
+		case result := <-readChan:
+			if result.err != nil {
+				// Check if it's a normal close
+				if websocket.CloseStatus(result.err) == websocket.StatusNormalClosure {
+					return nil
+				}
+				return fmt.Errorf("read message: %w", result.err)
 			}
-			return fmt.Errorf("read message: %w", err)
-		}
 
-		// Handle message
-		if err := c.handleMessage(&msg); err != nil {
-			log.Printf("error handling message from user %d: %v", c.userID, err)
-			return err
+			// Handle message
+			if err := c.handleMessage(&result.msg); err != nil {
+				log.Printf("error handling message from user %d: %v", c.userID, err)
+				return err
+			}
+
+			// Start next read
+			readChan = make(chan readResult, 1)
+			go c.readMessage(ctx, readChan)
 		}
 	}
+}
+
+// readMessage reads a message from the WebSocket in a separate goroutine.
+func (c *Connection) readMessage(ctx context.Context, result chan<- readResult) {
+	readCtx, readCancel := context.WithTimeout(ctx, 30*time.Minute)
+	defer readCancel()
+
+	var msg protocol.ClientMsg
+	err := wsjson.Read(readCtx, c.conn, &msg)
+
+	result <- readResult{msg: msg, err: err}
 }
 
 // sendInitial sends the initial state to a newly connected client.
@@ -174,14 +206,14 @@ func (c *Connection) handleMessage(msg *protocol.ClientMsg) error {
 }
 
 // broadcastUpdates forwards metadata updates to this client.
-func (c *Connection) broadcastUpdates(done chan struct{}) {
+func (c *Connection) broadcastUpdates(updates <-chan *protocol.ServerMsg, done chan struct{}) {
 	defer close(done)
 
 	for {
 		select {
 		case <-c.ctx.Done():
 			return
-		case msg, ok := <-c.kolabpad.Updates():
+		case msg, ok := <-updates:
 			if !ok {
 				// Channel closed, kolabpad killed
 				return

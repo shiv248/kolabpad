@@ -27,7 +27,6 @@
       WebAssembly.instantiateStreaming(fetch('/ot.wasm'), go.importObject)
         .then(result => {
           go.run(result.instance);
-          console.log('Go WASM OT module loaded');
         })
         .catch(err => {
           console.error('Failed to load WASM:', err);

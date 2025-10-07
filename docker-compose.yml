@@ -4,13 +4,24 @@ services:
   kolabpad:
     build: .
     ports:
-      - "3030:3030"
+      - "${PORT:-3030}:3030"
+    environment:
+      - PORT=${PORT:-3030}
+      - EXPIRY_DAYS=${EXPIRY_DAYS:-7}
+      - SQLITE_URI=${SQLITE_URI:-/data/kolabpad.db}
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
+
+  rustpad-original:
+    build:
+      context: ./dev-internal/rustpad-main
+      dockerfile: Dockerfile
+    ports:
+      - "8000:3030"
     environment:
       - PORT=3030
       - EXPIRY_DAYS=7
-      - SQLITE_URI=/data/kolabpad.db
-    volumes:
-      - ./data:/data
     restart: unless-stopped
 
   # Future additions:

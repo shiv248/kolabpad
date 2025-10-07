@@ -269,6 +269,7 @@ class Kolabpad {
         // Insert
         const pos = unicodePosition(this.model, index);
         index += unicodeLength(op);
+
         this.model.pushEditOperations(
           this.options.editor.getSelections(),
           [
@@ -293,6 +294,7 @@ class Kolabpad {
         const chars = -op;
         var from = unicodePosition(this.model, index);
         var to = unicodePosition(this.model, index + chars);
+
         this.model.pushEditOperations(
           this.options.editor.getSelections(),
           [
