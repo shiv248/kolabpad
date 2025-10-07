@@ -41,22 +41,6 @@ func (d *Database) Close() error {
 	return d.db.Close()
 }
 
-// migrate creates the database schema.
-func migrate(db *sql.DB) error {
-	schema := `
-	CREATE TABLE IF NOT EXISTS document (
-		id TEXT PRIMARY KEY,
-		text TEXT NOT NULL,
-		language TEXT
-	)`
-
-	if _, err := db.Exec(schema); err != nil {
-		return fmt.Errorf("create schema: %w", err)
-	}
-
-	return nil
-}
-
 // Load retrieves a document from the database.
 func (d *Database) Load(id string) (*PersistedDocument, error) {
 	var doc PersistedDocument

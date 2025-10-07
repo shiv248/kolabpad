@@ -5,7 +5,7 @@ package protocol
 import (
 	"encoding/json"
 
-	"github.com/shiv/kolabpad/pkg/ot"
+	"github.com/shiv248/kolabpad/pkg/ot"
 )
 
 // UserInfo represents a connected user's display information.

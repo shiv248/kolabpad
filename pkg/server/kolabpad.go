@@ -6,9 +6,9 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/shiv/kolabpad/internal/protocol"
-	"github.com/shiv/kolabpad/pkg/logger"
-	"github.com/shiv/kolabpad/pkg/ot"
+	"github.com/shiv248/kolabpad/internal/protocol"
+	"github.com/shiv248/kolabpad/pkg/logger"
+	"github.com/shiv248/kolabpad/pkg/ot"
 )
 
 // State represents the shared document state protected by a lock.

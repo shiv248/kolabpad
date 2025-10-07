@@ -1,4 +1,4 @@
-module github.com/shiv/kolabpad
+module github.com/shiv248/kolabpad
 
 go 1.23.1
 

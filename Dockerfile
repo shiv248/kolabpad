@@ -9,12 +9,12 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy OT library and WASM cmd
+# Copy OT library and WASM bridge
 COPY pkg/ot ./pkg/ot
-COPY cmd/ot-wasm ./cmd/ot-wasm
+COPY cmd/ot-wasm-bridge ./cmd/ot-wasm-bridge
 
 # Build WASM module
-RUN GOOS=js GOARCH=wasm go build -o ot.wasm ./cmd/ot-wasm
+RUN GOOS=js GOARCH=wasm go build -o ot.wasm ./cmd/ot-wasm-bridge
 
 # Copy Go WASM runtime
 RUN cp $(go env GOROOT)/misc/wasm/wasm_exec.js .

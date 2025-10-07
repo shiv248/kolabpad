@@ -10,9 +10,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/shiv/kolabpad/pkg/database"
-	"github.com/shiv/kolabpad/pkg/logger"
-	"github.com/shiv/kolabpad/pkg/server"
+	"github.com/shiv248/kolabpad/pkg/database"
+	"github.com/shiv248/kolabpad/pkg/logger"
+	"github.com/shiv248/kolabpad/pkg/server"
 )
 
 // Config holds all server configuration

@@ -10,8 +10,8 @@ import (
 
 	"nhooyr.io/websocket"
 
-	"github.com/shiv/kolabpad/pkg/database"
-	"github.com/shiv/kolabpad/pkg/logger"
+	"github.com/shiv248/kolabpad/pkg/database"
+	"github.com/shiv248/kolabpad/pkg/logger"
 )
 
 // Document represents a document entry in the server map.

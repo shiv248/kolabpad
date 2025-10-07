@@ -10,8 +10,8 @@ import (
 	"nhooyr.io/websocket"
 	"nhooyr.io/websocket/wsjson"
 
-	"github.com/shiv/kolabpad/internal/protocol"
-	"github.com/shiv/kolabpad/pkg/logger"
+	"github.com/shiv248/kolabpad/internal/protocol"
+	"github.com/shiv248/kolabpad/pkg/logger"
 )
 
 // readResult represents the result of a WebSocket read operation.

@@ -19,7 +19,7 @@ import { useRef } from "react";
 import { FaPalette } from "react-icons/fa";
 import { VscAccount } from "react-icons/vsc";
 
-import { UserInfo } from "./rustpad";
+import { UserInfo } from "./kolabpad";
 
 type UserProps = {
   info: UserInfo;
