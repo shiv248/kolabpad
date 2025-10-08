@@ -20,6 +20,7 @@ import { FaPalette } from "react-icons/fa";
 import { VscAccount } from "react-icons/vsc";
 
 import { UserInfo } from "./kolabpad";
+import { colors, zIndex } from "./theme";
 
 type UserProps = {
   info: UserInfo;
@@ -46,13 +47,14 @@ function User({
       isOpen={isOpen}
       onClose={onClose}
       initialFocusRef={inputRef}
+      strategy="fixed"
     >
       <PopoverTrigger>
         <HStack
           p={2}
           rounded="md"
           _hover={{
-            bgColor: darkMode ? "#464647" : "gray.200",
+            bgColor: darkMode ? colors.dark.bg.hover : colors.light.bg.hover,
             cursor: "pointer",
           }}
           onClick={() => isMe && onOpen()}
@@ -65,18 +67,19 @@ function User({
         </HStack>
       </PopoverTrigger>
       <PopoverContent
-        bgColor={darkMode ? "#333333" : "white"}
-        borderColor={darkMode ? "#464647" : "gray.200"}
+        bgColor={darkMode ? colors.dark.bg.tertiary : colors.light.bg.elevated}
+        borderColor={darkMode ? colors.dark.border : colors.light.border}
+        zIndex={zIndex.popover}
       >
         <PopoverHeader
           fontWeight="semibold"
-          borderColor={darkMode ? "#464647" : "gray.200"}
+          borderColor={darkMode ? colors.dark.border : colors.light.border}
         >
           Update Info
         </PopoverHeader>
-        <PopoverArrow bgColor={darkMode ? "#333333" : "white"} />
+        <PopoverArrow bgColor={darkMode ? colors.dark.bg.tertiary : colors.light.bg.elevated} />
         <PopoverCloseButton />
-        <PopoverBody borderColor={darkMode ? "#464647" : "gray.200"}>
+        <PopoverBody borderColor={darkMode ? colors.dark.border : colors.light.border}>
           <Input
             ref={inputRef}
             mb={2}
@@ -97,7 +100,7 @@ function User({
         <PopoverFooter
           display="flex"
           justifyContent="flex-end"
-          borderColor={darkMode ? "#464647" : "gray.200"}
+          borderColor={darkMode ? colors.dark.border : colors.light.border}
         >
           <ButtonGroup size="sm">
             <Button colorScheme="blue" onClick={onClose}>

@@ -1,6 +1,7 @@
 import { Flex, Icon, Text } from "@chakra-ui/react";
 import { useState } from "react";
 import { VscFileCode } from "react-icons/vsc";
+import { colors, layout } from "./theme";
 
 const version =
   import.meta.env.VITE_SHA && import.meta.env.VITE_SHA !== "undefined"
@@ -11,17 +12,17 @@ function Footer() {
   const [showVersion, setShowVersion] = useState(false);
 
   return (
-    <Flex h="22px" bgColor="#0071c3" color="white">
+    <Flex h={layout.footer.height} bgColor={colors.dark.bg.footer} color={colors.dark.text.footer}>
       <Flex
         h="100%"
-        bgColor="#09835c"
+        bgColor={colors.dark.bg.footerAccent}
         pl={2.5}
         pr={4}
-        fontSize="sm"
+        fontSize={layout.footer.fontSize}
         align="center"
         cursor="pointer"
         onClick={() => setShowVersion(!showVersion)}
-        _hover={{ bgColor: "#0a9668" }}
+        _hover={{ bgColor: colors.dark.bg.footerAccentHover }}
       >
         <Icon as={VscFileCode} mb={-0.5} mr={1} />
         <Text fontSize="xs">

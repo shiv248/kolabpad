@@ -5,6 +5,7 @@ import type {
   editor,
 } from "monaco-editor/esm/vs/editor/editor.api";
 import { logger } from "./logger";
+import { zIndex } from "./theme";
 
 // OpSeq is loaded from Go WASM (global variable set by cmd/ot-wasm)
 declare const OpSeq: any;
@@ -373,7 +374,7 @@ class Kolabpad {
             options: {
               className: `remote-cursor-${hue}`,
               stickiness: 1,
-              zIndex: 2,
+              zIndex: zIndex.editorCursor,
             },
             range: {
               startLineNumber: position.lineNumber,
@@ -393,7 +394,7 @@ class Kolabpad {
                 value: name,
               },
               stickiness: 1,
-              zIndex: 1,
+              zIndex: zIndex.editorSelection,
             },
             range: {
               startLineNumber: position.lineNumber,

@@ -12,6 +12,7 @@ import Sidebar from "./Sidebar";
 import animals from "./animals.json";
 import languages from "./languages.json";
 import Kolabpad, { UserInfo } from "./kolabpad";
+import { colors, layout } from "./theme";
 import useHash from "./useHash";
 
 function getWsUri(id: string) {
@@ -142,16 +143,16 @@ function App() {
       direction="column"
       h="100vh"
       overflow="hidden"
-      bgColor={darkMode ? "#1e1e1e" : "white"}
-      color={darkMode ? "#cbcaca" : "inherit"}
+      bgColor={darkMode ? colors.dark.bg.primary : colors.light.bg.primary}
+      color={darkMode ? colors.dark.text.primary : colors.light.text.primary}
     >
       <Box
         flexShrink={0}
-        bgColor={darkMode ? "#333333" : "#e8e8e8"}
-        color={darkMode ? "#cccccc" : "#383838"}
+        bgColor={darkMode ? colors.dark.bg.tertiary : colors.light.bg.tertiary}
+        color={darkMode ? colors.dark.text.header : colors.light.text.secondary}
         textAlign="center"
-        fontSize="sm"
-        py={0.5}
+        fontSize={layout.header.fontSize}
+        py={layout.header.py}
       >
         Kolabpad
       </Box>
@@ -180,18 +181,18 @@ function App() {
 
         <Flex flex={1} minW={0} h="100%" direction="column" overflow="hidden">
           <HStack
-            h={6}
+            h={layout.breadcrumb.height}
             spacing={1}
-            color="#888888"
+            color={colors.dark.text.muted}
             fontWeight="medium"
-            fontSize="13px"
-            px={3.5}
+            fontSize={layout.breadcrumb.fontSize}
+            px={layout.breadcrumb.px}
             flexShrink={0}
           >
-            <Icon as={VscFolderOpened} fontSize="md" color="blue.500" />
+            <Icon as={VscFolderOpened} fontSize="md" color={colors.dark.accent.folderIcon} />
             <Text>documents</Text>
             <Icon as={VscChevronRight} fontSize="md" />
-            <Icon as={VscGist} fontSize="md" color="purple.500" />
+            <Icon as={VscGist} fontSize="md" color={colors.dark.accent.documentIcon} />
             <Text>{id}</Text>
           </HStack>
           <Box flex={1} minH={0}>
