@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"math/rand"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -67,6 +68,7 @@ func NewServer(db *database.Database, maxDocumentSize, broadcastBufferSize int, 
 	s.mux.HandleFunc("/api/socket/", s.handleSocket)
 	s.mux.HandleFunc("/api/text/", s.handleText)
 	s.mux.HandleFunc("/api/stats", s.handleStats)
+	s.mux.HandleFunc("/api/document/", s.handleDocument)
 
 	// Serve frontend static files from dist/
 	fs := http.FileServer(http.Dir("./dist"))
@@ -91,6 +93,18 @@ func (s *Server) handleSocket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	logger.Info("WebSocket connection request for document: %s", docID)
+
+	// Validate OTP if document is protected
+	if s.state.db != nil {
+		if persisted, err := s.state.db.Load(docID); err == nil && persisted != nil && persisted.OTP != nil {
+			providedOTP := r.URL.Query().Get("otp")
+			if providedOTP != *persisted.OTP {
+				http.Error(w, "Invalid or missing OTP", http.StatusUnauthorized)
+				logger.Info("Unauthorized access attempt for document: %s", docID)
+				return
+			}
+		}
+	}
 
 	// Get or create document
 	doc := s.getOrCreateDocument(docID)
@@ -180,6 +194,93 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(stats)
+}
+
+// handleDocument handles document protection endpoints.
+// Route: /api/document/{id}/protect
+func (s *Server) handleDocument(w http.ResponseWriter, r *http.Request) {
+	// Parse path to get document ID and action
+	path := r.URL.Path[len("/api/document/"):]
+	parts := strings.Split(path, "/")
+
+	if len(parts) != 2 || parts[0] == "" || parts[1] != "protect" {
+		http.Error(w, "invalid endpoint", http.StatusNotFound)
+		return
+	}
+
+	docID := parts[0]
+
+	if s.state.db == nil {
+		http.Error(w, "database not enabled", http.StatusServiceUnavailable)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodPost:
+		s.handleProtectDocument(w, r, docID)
+	case http.MethodDelete:
+		s.handleUnprotectDocument(w, r, docID)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// handleProtectDocument enables OTP protection for a document.
+func (s *Server) handleProtectDocument(w http.ResponseWriter, r *http.Request, docID string) {
+	// Generate OTP
+	otp := GenerateOTP()
+
+	// Check if document exists in DB, if not create it
+	doc, err := s.state.db.Load(docID)
+	if err != nil {
+		logger.Error("Failed to load document: %v", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	if doc == nil {
+		// Document doesn't exist in DB yet, create it
+		doc = &database.PersistedDocument{
+			ID:       docID,
+			Text:     "",
+			Language: nil,
+			OTP:      &otp,
+		}
+		if err := s.state.db.Store(doc); err != nil {
+			logger.Error("Failed to store document: %v", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+	} else {
+		// Update existing document's OTP
+		if err := s.state.db.UpdateOTP(docID, &otp); err != nil {
+			logger.Error("Failed to update OTP: %v", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	logger.Info("Document %s protected with OTP", docID)
+
+	// Return OTP to client
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"otp": otp,
+	})
+}
+
+// handleUnprotectDocument disables OTP protection for a document.
+func (s *Server) handleUnprotectDocument(w http.ResponseWriter, r *http.Request, docID string) {
+	// Remove OTP by setting it to NULL
+	if err := s.state.db.UpdateOTP(docID, nil); err != nil {
+		logger.Error("Failed to remove OTP: %v", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	logger.Info("Document %s unprotected (OTP removed)", docID)
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // getOrCreateDocument gets an existing document or creates a new one.

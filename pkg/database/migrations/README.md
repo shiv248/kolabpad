@@ -82,8 +82,12 @@ ORDER BY version;
 
 ### Version 1: Initial Schema
 - **File:** `1_document.sql`
-- **Description:** Creates the `document` table with id, text, and language columns
+- **Description:** Creates the `document` table with id, text, language, and otp columns
 - **Tables:** `document`
+  - `id TEXT PRIMARY KEY` - Unique document identifier
+  - `text TEXT NOT NULL` - Document content
+  - `language TEXT` - Syntax highlighting language (nullable)
+  - `otp TEXT` - One-time password for document protection (nullable, NULL = unprotected)
 
 ## Troubleshooting
 

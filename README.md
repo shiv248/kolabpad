@@ -108,7 +108,9 @@ PORT=3030 SQLITE_URI=kolabpad.db go run ./cmd/server/
 
 - `GET /api/text/{id}` - Fetch document text
 - `GET /api/stats` - Server statistics
-- `WebSocket /api/socket/{id}` - Collaborative editing session
+- `WebSocket /api/socket/{id}?otp={otp}` - Collaborative editing session (OTP required if document is protected)
+- `POST /api/document/{id}/protect` - Enable OTP protection for a document
+- `DELETE /api/document/{id}/protect` - Disable OTP protection for a document
 - `GET /` - Serve frontend React app (production build)
 
 ## OT Library Usage
@@ -131,6 +133,66 @@ aPrime, bPrime, err := opA.Transform(opB)
 ```
 
 See [`pkg/ot/README.md`](pkg/ot/README.md) for detailed OT library documentation.
+
+## Security - Document Protection
+
+Kolabpad supports optional OTP (One-Time Password) protection for documents to prevent unauthorized access. This is useful for sharing sensitive content like production `.env` files or confidential notes.
+
+### How It Works
+
+1. **Opt-in Protection**: Documents are unprotected by default. Enable protection via toggle or API.
+2. **Auto-generated OTP**: Server generates a cryptographically secure 12-character random token using `crypto/rand` (72 bits of entropy).
+3. **Access Control**: Protected documents require the OTP in the URL query parameter (`?otp=xK9mP2qL5wYz`).
+4. **Database Storage**: OTP is stored plaintext in SQLite - security relies on token randomness, not encryption.
+
+### Why Not Hash the OTP?
+
+The OTP is stored in plaintext because:
+- If someone has DB access, they already have all document content
+- Security comes from the **unpredictability** of the 12-char random token (4.7 trillion trillion possibilities)
+- Simpler implementation without bcrypt overhead
+- Still prevents document enumeration and brute-force attacks
+
+### API Usage
+
+**Enable protection:**
+```bash
+curl -X POST http://localhost:3030/api/document/mydoc/protect
+# Response: {"otp":"xK9mP2qL5wYz"}
+```
+
+**Share protected document:**
+```
+http://localhost:3030/#mydoc?otp=xK9mP2qL5wYz
+```
+
+**Disable protection:**
+```bash
+curl -X DELETE http://localhost:3030/api/document/mydoc/protect
+```
+
+**Access via WebSocket:**
+```javascript
+const ws = new WebSocket('ws://localhost:3030/api/socket/mydoc?otp=xK9mP2qL5wYz');
+```
+
+### Security Properties
+
+- ✅ **Prevents enumeration**: Can't access documents by guessing IDs
+- ✅ **Brute-force resistant**: 72-bit entropy makes guessing infeasible
+- ✅ **URL-shareable**: Easy to copy/paste for team collaboration
+- ✅ **Optional**: No friction for casual use, opt-in for sensitive data
+- ⚠️ **Not end-to-end encrypted**: Server sees document plaintext
+- ⚠️ **URL leakage**: OTP visible in browser history, referrer headers, logs
+
+### Best Practices
+
+For highly sensitive data (production secrets, credentials):
+1. Enable OTP protection before sharing
+2. Share URLs via secure channels (encrypted chat, not email)
+3. Use short document expiry times (configure `EXPIRY_DAYS`)
+4. Consider using tools like [Mozilla Send](https://send.vis.ee/) for sharing URLs
+5. Deploy Kolabpad behind TLS/HTTPS in production
 
 ## Testing
 
@@ -177,12 +239,13 @@ This means you can:
 - [x] Docker deployment
 - [x] Go WASM module for browser
 - [x] Frontend integration (Rustpad UI)
+- [x] OTP-based document protection (security)
 - [ ] Integration tests
 - [ ] Performance benchmarks vs Rust
 
-## Full Feature Parity with Rustpad ✅
+## Beyond Rustpad ✨
 
-The Go implementation now has **complete feature parity** with the Rust version:
+The Go implementation has **complete feature parity** with Rustpad, plus additional security features:
 - ✅ Real-time collaborative editing
 - ✅ Operational Transformation algorithm
 - ✅ WebSocket protocol
@@ -191,6 +254,7 @@ The Go implementation now has **complete feature parity** with the Rust version:
 - ✅ Document expiry and cleanup
 - ✅ Periodic snapshots to database
 - ✅ Wire protocol compatibility
+- ✨ **OTP-based document protection** (new security feature)
 
 ## References
 

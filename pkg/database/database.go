@@ -13,6 +13,7 @@ type PersistedDocument struct {
 	ID       string
 	Text     string
 	Language *string
+	OTP      *string
 }
 
 // Database wraps a SQLite connection.
@@ -45,11 +46,12 @@ func (d *Database) Close() error {
 func (d *Database) Load(id string) (*PersistedDocument, error) {
 	var doc PersistedDocument
 	var language sql.NullString
+	var otp sql.NullString
 
 	err := d.db.QueryRow(
-		"SELECT id, text, language FROM document WHERE id = ?",
+		"SELECT id, text, language, otp FROM document WHERE id = ?",
 		id,
-	).Scan(&doc.ID, &doc.Text, &language)
+	).Scan(&doc.ID, &doc.Text, &language, &otp)
 
 	if err == sql.ErrNoRows {
 		return nil, nil // Document doesn't exist
@@ -62,20 +64,25 @@ func (d *Database) Load(id string) (*PersistedDocument, error) {
 		doc.Language = &language.String
 	}
 
+	if otp.Valid {
+		doc.OTP = &otp.String
+	}
+
 	return &doc, nil
 }
 
 // Store saves a document to the database (INSERT or UPDATE).
 func (d *Database) Store(doc *PersistedDocument) error {
 	query := `
-	INSERT INTO document (id, text, language)
-	VALUES (?, ?, ?)
+	INSERT INTO document (id, text, language, otp)
+	VALUES (?, ?, ?, ?)
 	ON CONFLICT(id) DO UPDATE SET
 		text = excluded.text,
-		language = excluded.language
+		language = excluded.language,
+		otp = excluded.otp
 	`
 
-	result, err := d.db.Exec(query, doc.ID, doc.Text, doc.Language)
+	result, err := d.db.Exec(query, doc.ID, doc.Text, doc.Language, doc.OTP)
 	if err != nil {
 		return fmt.Errorf("exec: %w", err)
 	}
@@ -107,6 +114,15 @@ func (d *Database) Delete(id string) error {
 	_, err := d.db.Exec("DELETE FROM document WHERE id = ?", id)
 	if err != nil {
 		return fmt.Errorf("delete: %w", err)
+	}
+	return nil
+}
+
+// UpdateOTP updates the OTP for a document.
+func (d *Database) UpdateOTP(id string, otp *string) error {
+	_, err := d.db.Exec("UPDATE document SET otp = ? WHERE id = ?", otp, id)
+	if err != nil {
+		return fmt.Errorf("update otp: %w", err)
 	}
 	return nil
 }
