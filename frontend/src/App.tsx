@@ -21,7 +21,8 @@ function getWsUri(id: string) {
   url.protocol = url.protocol == "https:" ? "wss:" : "ws:";
 
   // Add OTP parameter if present in the URL
-  const params = new URLSearchParams(window.location.hash.split('?')[1]);
+  const hashParts = window.location.hash.slice(1).split('?');
+  const params = new URLSearchParams(hashParts[1] || '');
   const otp = params.get('otp');
   if (otp) {
     url.searchParams.set('otp', otp);
@@ -218,16 +219,16 @@ function App() {
           <HStack
             h={layout.breadcrumb.height}
             spacing={1}
-            color={colors.dark.text.muted}
+            color={darkMode ? colors.dark.text.muted : colors.light.text.muted}
             fontWeight="medium"
             fontSize={layout.breadcrumb.fontSize}
             px={layout.breadcrumb.px}
             flexShrink={0}
           >
-            <Icon as={VscFolderOpened} fontSize="md" color={colors.dark.accent.folderIcon} />
+            <Icon as={VscFolderOpened} fontSize="md" color={darkMode ? colors.dark.accent.folderIcon : colors.light.accent.folderIcon} />
             <Text>documents</Text>
             <Icon as={VscChevronRight} fontSize="md" />
-            <Icon as={VscGist} fontSize="md" color={colors.dark.accent.documentIcon} />
+            <Icon as={VscGist} fontSize="md" color={darkMode ? colors.dark.accent.documentIcon : colors.light.accent.documentIcon} />
             <Text>{id}</Text>
           </HStack>
           <Box flex={1} minH={0}>

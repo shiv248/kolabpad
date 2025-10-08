@@ -19,6 +19,7 @@ import { useRef } from "react";
 import { FaPalette } from "react-icons/fa";
 import { VscAccount } from "react-icons/vsc";
 
+import { USER } from "./constants";
 import { UserInfo } from "./kolabpad";
 import { colors, zIndex } from "./theme";
 
@@ -84,7 +85,7 @@ function User({
             ref={inputRef}
             mb={2}
             value={info.name}
-            maxLength={25}
+            maxLength={USER.MAX_NAME_LENGTH}
             onChange={(event) => onChangeName?.(event.target.value)}
           />
           <Button

@@ -19,6 +19,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { IoMoon, IoSunny } from "react-icons/io5";
 import { VscRepo } from "react-icons/vsc";
+import { UI, USER } from "./constants";
 import { logger } from "./logger";
 
 import ConnectionStatus from "./ConnectionStatus";
@@ -60,14 +61,16 @@ function Sidebar({
   const [otpEnabled, setOtpEnabled] = useState(false);
   const [otp, setOtp] = useState<string | null>(null);
   const [isToggling, setIsToggling] = useState(false);
+  const [copied, setCopied] = useState(false);
   const ignoreNextBroadcastRef = useRef(false);
-  const initialMountRef = useRef(true);
+  const initialOtpReceivedRef = useRef(false);
 
   // Check if OTP is in the URL on component mount
   // Note: Component remounts completely when documentId changes (via key prop),
   // so this effect runs fresh for each document
   useEffect(() => {
-    const params = new URLSearchParams(window.location.hash.split('?')[1]);
+    const hashParts = window.location.hash.slice(1).split('?');
+    const params = new URLSearchParams(hashParts[1] || '');
     const otpFromUrl = params.get('otp');
     if (otpFromUrl) {
       setOtp(otpFromUrl);
@@ -76,20 +79,10 @@ function Sidebar({
     } else {
       logger.debug('[OTPInit] No OTP in URL');
     }
-    // Mark initial mount as complete after a brief delay
-    setTimeout(() => {
-      initialMountRef.current = false;
-    }, 100);
   }, []); // Only runs on mount (component remounts when document changes)
 
   // Sync OTP changes from server
   useEffect(() => {
-    // Skip during initial mount to preserve OTP from URL
-    if (initialMountRef.current) {
-      logger.debug('[OTPBroadcast] Skipping during initial mount');
-      return;
-    }
-
     // Skip if we initiated this change
     if (ignoreNextBroadcastRef.current) {
       logger.debug('[OTPBroadcast] Ignoring broadcast (we initiated this change)');
@@ -106,7 +99,24 @@ function Sidebar({
       return;
     }
 
-    logger.debug('[OTPBroadcast] Received OTP broadcast:', { otpFromServer, currentOtp: otp });
+    // First broadcast from server is just initial state sync, not a change
+    if (!initialOtpReceivedRef.current) {
+      initialOtpReceivedRef.current = true;
+      logger.debug('[OTPBroadcast] First broadcast (initial state sync), no toast');
+      // Sync state silently without showing toast
+      if (otpFromServer) {
+        setOtp(otpFromServer);
+        setOtpEnabled(true);
+        window.history.replaceState(null, "", `#${documentId}?otp=${otpFromServer}`);
+      } else {
+        setOtp(null);
+        setOtpEnabled(false);
+        window.history.replaceState(null, "", `#${documentId}`);
+      }
+      return;
+    }
+
+    logger.debug('[OTPBroadcast] Received OTP change from another user:', { otpFromServer, currentOtp: otp });
 
     if (otpFromServer) {
       // OTP enabled
@@ -117,7 +127,7 @@ function Sidebar({
         title: "OTP Updated",
         description: "Document protection has been enabled by another user",
         status: "info",
-        duration: 3000,
+        duration: UI.TOAST_INFO_DURATION,
         isClosable: true,
       });
     } else if (!otpFromServer && otp) {
@@ -129,7 +139,7 @@ function Sidebar({
         title: "OTP Removed",
         description: "Document protection has been disabled by another user",
         status: "info",
-        duration: 3000,
+        duration: UI.TOAST_INFO_DURATION,
         isClosable: true,
       });
     }
@@ -161,7 +171,7 @@ function Sidebar({
           title: "OTP Protection Enabled",
           description: "Document is now protected with a secure token",
           status: "success",
-          duration: 3000,
+          duration: UI.TOAST_INFO_DURATION,
           isClosable: true,
         });
       } else {
@@ -180,7 +190,7 @@ function Sidebar({
           title: "OTP Protection Disabled",
           description: "Document is now accessible without a token",
           status: "info",
-          duration: 3000,
+          duration: UI.TOAST_INFO_DURATION,
           isClosable: true,
         });
       }
@@ -189,7 +199,7 @@ function Sidebar({
         title: "Error",
         description: error instanceof Error ? error.message : "Failed to toggle OTP protection",
         status: "error",
-        duration: 3000,
+        duration: UI.TOAST_INFO_DURATION,
         isClosable: true,
       });
       // Revert the toggle state on error
@@ -202,11 +212,13 @@ function Sidebar({
 
   async function handleCopy() {
     await navigator.clipboard.writeText(documentUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), UI.COPY_FEEDBACK_DURATION);
     toast({
       title: "Copied!",
       description: "Link copied to clipboard",
       status: "success",
-      duration: 2000,
+      duration: UI.TOAST_SUCCESS_DURATION,
       isClosable: true,
     });
   }
@@ -252,7 +264,7 @@ function Sidebar({
         onChange={(event) => onLanguageChange(event.target.value)}
       >
         {languages.map((lang) => (
-          <option key={lang} value={lang} style={{ color: "black" }}>
+          <option key={lang} value={lang}>
             {lang}
           </option>
         ))}
@@ -292,7 +304,7 @@ function Sidebar({
             bgColor={darkMode ? colors.dark.bg.hover : colors.light.bg.hover}
             color={darkMode ? "white" : "inherit"}
           >
-            Copy
+            {copied ? "Copied!" : "Copy"}
           </Button>
         </InputRightElement>
       </InputGroup>

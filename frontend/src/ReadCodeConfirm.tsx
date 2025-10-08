@@ -30,7 +30,7 @@ function ReadCodeConfirm({ isOpen, onClose, onConfirm }: ReadCodeConfirmProps) {
           <AlertDialogHeader>Clear editor</AlertDialogHeader>
 
           <AlertDialogBody>
-            Opening Kolabpad's source code will clear the existing shared
+            Opening Kolabpad&apos;s source code will clear the existing shared
             content. Is this okay?
           </AlertDialogBody>
 

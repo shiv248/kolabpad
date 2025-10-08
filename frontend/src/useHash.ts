@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 
-const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-const idLen = 6;
+import { DOCUMENT } from "./constants";
 
 function getHash() {
   const fullHash = window.location.hash.slice(1);
@@ -9,8 +8,8 @@ function getHash() {
   if (!fullHash) {
     // No hash at all - generate new document ID
     let id = "";
-    for (let i = 0; i < idLen; i++) {
-      id += chars[Math.floor(Math.random() * chars.length)];
+    for (let i = 0; i < DOCUMENT.ID_LENGTH; i++) {
+      id += DOCUMENT.ID_CHARS[Math.floor(Math.random() * DOCUMENT.ID_CHARS.length)];
     }
     window.history.replaceState(null, "", "#" + id);
     return id;

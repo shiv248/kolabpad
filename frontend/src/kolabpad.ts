@@ -4,11 +4,21 @@ import type {
   IPosition,
   editor,
 } from "monaco-editor/esm/vs/editor/editor.api";
+
+import { WEBSOCKET } from "./constants";
 import { logger } from "./logger";
 import { zIndex } from "./theme";
+import type { IOpSeq } from "./types/opseq";
 
 // OpSeq is loaded from Go WASM (global variable set by cmd/ot-wasm)
-declare const OpSeq: any;
+// Type definition in ./types/opseq.d.ts
+declare const OpSeq: {
+  new(): IOpSeq;
+  from_str(json: string): IOpSeq | null;
+  with_capacity(capacity: number): IOpSeq;
+} & {
+  [key: string]: any; // Allow dynamic property access
+};
 
 /** Options passed in to the Kolabpad constructor. */
 export type KolabpadOptions = {
@@ -35,6 +45,7 @@ class Kolabpad {
   private ws?: WebSocket;
   private connecting?: boolean;
   private recentFailures: number = 0;
+  private everConnected: boolean = false; // Track if we've ever successfully connected
   private readonly model: editor.ITextModel;
   private readonly onChangeHandle: IDisposable;
   private readonly onCursorHandle: IDisposable;
@@ -46,8 +57,8 @@ class Kolabpad {
   // Client-server state
   private me: number = -1;
   private revision: number = 0;
-  private outstanding?: OpSeq;
-  private buffer?: OpSeq;
+  private outstanding?: IOpSeq;
+  private buffer?: IOpSeq;
   private users: Record<number, UserInfo> = {};
   private userCursors: Record<number, CursorData> = {};
   private myInfo?: UserInfo;
@@ -82,12 +93,12 @@ class Kolabpad {
     };
     window.addEventListener("beforeunload", this.beforeUnload);
 
-    const interval = options.reconnectInterval ?? 1000;
+    const interval = options.reconnectInterval ?? WEBSOCKET.RECONNECT_INTERVAL;
     this.tryConnect();
     this.tryConnectId = window.setInterval(() => this.tryConnect(), interval);
     this.resetFailuresId = window.setInterval(
       () => (this.recentFailures = 0),
-      15 * interval,
+      WEBSOCKET.FAILURE_RESET_MULTIPLIER * interval,
     );
   }
 
@@ -132,6 +143,7 @@ class Kolabpad {
     ws.onopen = () => {
       this.connecting = false;
       this.ws = ws;
+      this.everConnected = true; // Mark that we've successfully connected at least once
       this.options.onConnected?.();
       this.users = {};
       this.options.onChangeUsers?.(this.users);
@@ -145,9 +157,9 @@ class Kolabpad {
       if (this.ws) {
         this.ws = undefined;
         this.options.onDisconnected?.();
-        if (++this.recentFailures >= 5) {
-          // If we disconnect 5 times within 15 reconnection intervals, then the
-          // client is likely desynchronized and needs to refresh.
+        if (++this.recentFailures >= WEBSOCKET.MAX_FAILURES) {
+          // If we disconnect MAX_FAILURES times within FAILURE_RESET_MULTIPLIER reconnection intervals,
+          // then the client is likely desynchronized and needs to refresh.
           this.dispose();
           this.options.onDesynchronized?.();
         }
@@ -155,8 +167,9 @@ class Kolabpad {
         this.connecting = false;
         // Check if this was an authentication error (connection refused during handshake)
         // WebSocket close code 1002 = protocol error, or 1006 = abnormal closure
-        if ((event.code === 1006 || event.code === 1002) && this.recentFailures === 0) {
-          // First connection attempt failed - likely auth error
+        // Only treat as auth error if we've never successfully connected before
+        if ((event.code === 1006 || event.code === 1002) && !this.everConnected) {
+          // Never successfully connected - likely auth error
           this.options.onAuthError?.();
         }
       }
@@ -239,21 +252,34 @@ class Kolabpad {
     }
   }
 
-  private applyServer(operation: OpSeq) {
+  private applyServer(operation: IOpSeq) {
     const fullDoc = this.model.getValue();
     const beforeDoc = fullDoc.slice(0, 50);
     const beforeTruncated = fullDoc.length > 50;
 
     if (this.outstanding) {
       logger.debug(`[ApplyServer] Transforming against outstanding operation`);
-      const pair = this.outstanding.transform(operation)!;
+      const pair = this.outstanding.transform(operation);
+      if (!pair) {
+        logger.error("[ApplyServer] Transform failed against outstanding - desynchronized");
+        this.dispose();
+        this.options.onDesynchronized?.();
+        return;
+      }
       this.outstanding = pair.first();
       operation = pair.second();
+
       if (this.buffer) {
         logger.debug(`[ApplyServer] Transforming against buffered operation`);
-        const pair = this.buffer.transform(operation)!;
-        this.buffer = pair.first();
-        operation = pair.second();
+        const bufferPair = this.buffer.transform(operation);
+        if (!bufferPair) {
+          logger.error("[ApplyServer] Transform failed against buffer - desynchronized");
+          this.dispose();
+          this.options.onDesynchronized?.();
+          return;
+        }
+        this.buffer = bufferPair.first();
+        operation = bufferPair.second();
       }
     }
     logger.debug(`[ApplyServer] Applying to document (before): "${beforeDoc}${beforeTruncated ? '...' : ''}"`);
@@ -264,7 +290,7 @@ class Kolabpad {
     logger.debug(`[ApplyServer] Applied (after): "${afterDoc}${afterTruncated ? '...' : ''}"`);
   }
 
-  private applyClient(operation: OpSeq) {
+  private applyClient(operation: IOpSeq) {
     const opDetails = this.formatOperation(JSON.parse(operation.to_string()));
     if (!this.outstanding) {
       logger.debug(`[ApplyClient] Sending operation (no outstanding):`, opDetails);
@@ -275,12 +301,15 @@ class Kolabpad {
       this.buffer = operation;
     } else {
       logger.debug(`[ApplyClient] Composing with buffer:`, opDetails);
-      this.buffer = this.buffer.compose(operation);
+      const composed = this.buffer.compose(operation);
+      if (composed) {
+        this.buffer = composed;
+      }
     }
     this.transformCursors(operation);
   }
 
-  private sendOperation(operation: OpSeq) {
+  private sendOperation(operation: IOpSeq) {
     const op = operation.to_string();
     logger.debug(`[SendOperation] Sending at revision ${this.revision}:`, this.formatOperation(JSON.parse(op)));
     this.ws?.send(`{"Edit":{"revision":${this.revision},"operation":${op}}}`);
@@ -298,7 +327,7 @@ class Kolabpad {
     }
   }
 
-  private applyOperation(operation: OpSeq) {
+  private applyOperation(operation: IOpSeq) {
     if (operation.is_noop()) return;
 
     this.ignoreChanges = true;
@@ -361,7 +390,7 @@ class Kolabpad {
     this.transformCursors(operation);
   }
 
-  private transformCursors(operation: OpSeq) {
+  private transformCursors(operation: IOpSeq) {
     for (const data of Object.values(this.userCursors)) {
       data.cursors = data.cursors.map((c) => operation.transform_index(c));
       data.selections = data.selections.map(([s, e]) => [
@@ -450,7 +479,14 @@ class Kolabpad {
         changeOp.delete(deletedLength);
         changeOp.insert(text);
         changeOp.retain(restLength);
-        operation = operation.compose(changeOp)!;
+        const composed = operation.compose(changeOp);
+        if (!composed) {
+          logger.error("[onChange] Compose failed - desynchronized");
+          this.dispose();
+          this.options.onDesynchronized?.();
+          return;
+        }
+        operation = composed;
         offset += changeOp.target_len() - changeOp.base_len();
       }
       this.applyClient(operation);
@@ -549,26 +585,34 @@ function unicodePosition(model: editor.ITextModel, offset: number): IPosition {
   return model.getPositionAt(offsetUTF16);
 }
 
-/** Cache for private use by `generateCssStyles()`. */
-const generatedStyles = new Set<number>();
+/** Shared stylesheet for all remote cursor/selection styles. */
+let sharedStyleSheet: CSSStyleSheet | null = null;
+
+/** Cache of hues we've already generated styles for. */
+const generatedHues = new Set<number>();
 
 /** Add CSS styles for a remote user's cursor and selection. */
 function generateCssStyles(hue: number) {
-  if (!generatedStyles.has(hue)) {
-    generatedStyles.add(hue);
-    const css = `
-      .monaco-editor .remote-selection-${hue} {
-        background-color: hsla(${hue}, 90%, 80%, 0.5);
-      }
-      .monaco-editor .remote-cursor-${hue} {
-        border-left: 2px solid hsl(${hue}, 90%, 25%);
-      }
-    `;
-    const element = document.createElement("style");
-    const text = document.createTextNode(css);
-    element.appendChild(text);
-    document.head.appendChild(element);
+  if (generatedHues.has(hue)) return;
+
+  // Create shared stylesheet on first use
+  if (!sharedStyleSheet) {
+    const style = document.createElement("style");
+    document.head.appendChild(style);
+    sharedStyleSheet = style.sheet as CSSStyleSheet;
   }
+
+  generatedHues.add(hue);
+
+  // Add rules to shared stylesheet
+  sharedStyleSheet.insertRule(
+    `.monaco-editor .remote-selection-${hue} { background-color: hsla(${hue}, 90%, 80%, 0.5); }`,
+    sharedStyleSheet.cssRules.length
+  );
+  sharedStyleSheet.insertRule(
+    `.monaco-editor .remote-cursor-${hue} { border-left: 2px solid hsl(${hue}, 90%, 25%); }`,
+    sharedStyleSheet.cssRules.length
+  );
 }
 
 export default Kolabpad;
