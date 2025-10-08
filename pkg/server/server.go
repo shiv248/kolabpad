@@ -262,6 +262,12 @@ func (s *Server) handleProtectDocument(w http.ResponseWriter, r *http.Request, d
 
 	logger.Info("Document %s protected with OTP", docID)
 
+	// Broadcast OTP to all connected clients
+	if val, ok := s.state.documents.Load(docID); ok {
+		doc := val.(*Document)
+		doc.Kolabpad.SetOTP(&otp)
+	}
+
 	// Return OTP to client
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
@@ -279,6 +285,12 @@ func (s *Server) handleUnprotectDocument(w http.ResponseWriter, r *http.Request,
 	}
 
 	logger.Info("Document %s unprotected (OTP removed)", docID)
+
+	// Broadcast OTP removal to all connected clients
+	if val, ok := s.state.documents.Load(docID); ok {
+		doc := val.(*Document)
+		doc.Kolabpad.SetOTP(nil)
+	}
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -402,10 +414,18 @@ func (s *Server) persister(ctx context.Context, id string, kolabpad *Kolabpad) {
 		revision := kolabpad.Revision()
 		if revision > lastRevision {
 			text, language := kolabpad.Snapshot()
+
+			// Load existing document to preserve OTP
+			var otp *string
+			if existing, err := s.state.db.Load(id); err == nil && existing != nil {
+				otp = existing.OTP
+			}
+
 			doc := &database.PersistedDocument{
 				ID:       id,
 				Text:     text,
 				Language: language,
+				OTP:      otp,
 			}
 
 			logger.Debug("persisting revision %d for id = %s", revision, id)

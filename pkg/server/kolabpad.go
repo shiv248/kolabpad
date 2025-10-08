@@ -295,6 +295,12 @@ func (r *Kolabpad) SetLanguage(lang string) {
 	r.broadcast(protocol.NewLanguageMsg(lang))
 }
 
+// SetOTP broadcasts OTP changes to all connected clients.
+func (r *Kolabpad) SetOTP(otp *string) {
+	// Broadcast to all authenticated clients
+	r.broadcast(protocol.NewOTPMsg(otp))
+}
+
 // SetUserInfo updates a user's display information.
 func (r *Kolabpad) SetUserInfo(userID uint64, info protocol.UserInfo) {
 	r.mu.Lock()

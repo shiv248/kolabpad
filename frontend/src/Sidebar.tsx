@@ -2,6 +2,8 @@ import {
   Button,
   Container,
   Flex,
+  FormControl,
+  FormLabel,
   Heading,
   IconButton,
   Input,
@@ -10,11 +12,14 @@ import {
   Link,
   Select,
   Stack,
+  Switch,
   Text,
   useToast,
 } from "@chakra-ui/react";
+import { useEffect, useRef, useState } from "react";
 import { IoMoon, IoSunny } from "react-icons/io5";
 import { VscRepo } from "react-icons/vsc";
+import { logger } from "./logger";
 
 import ConnectionStatus from "./ConnectionStatus";
 import { colors, layout } from "./theme";
@@ -34,6 +39,7 @@ export type SidebarProps = {
   onLoadSample: () => void;
   onChangeName: (name: string) => void;
   onChangeColor: () => void;
+  otpFromServer: string | null;
 };
 
 function Sidebar({
@@ -48,11 +54,151 @@ function Sidebar({
   onLoadSample,
   onChangeName,
   onChangeColor,
+  otpFromServer,
 }: SidebarProps) {
   const toast = useToast();
+  const [otpEnabled, setOtpEnabled] = useState(false);
+  const [otp, setOtp] = useState<string | null>(null);
+  const [isToggling, setIsToggling] = useState(false);
+  const ignoreNextBroadcastRef = useRef(false);
+  const initialMountRef = useRef(true);
+
+  // Check if OTP is in the URL on component mount
+  // Note: Component remounts completely when documentId changes (via key prop),
+  // so this effect runs fresh for each document
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.hash.split('?')[1]);
+    const otpFromUrl = params.get('otp');
+    if (otpFromUrl) {
+      setOtp(otpFromUrl);
+      setOtpEnabled(true);
+      logger.debug('[OTPInit] Loaded OTP from URL');
+    } else {
+      logger.debug('[OTPInit] No OTP in URL');
+    }
+    // Mark initial mount as complete after a brief delay
+    setTimeout(() => {
+      initialMountRef.current = false;
+    }, 100);
+  }, []); // Only runs on mount (component remounts when document changes)
+
+  // Sync OTP changes from server
+  useEffect(() => {
+    // Skip during initial mount to preserve OTP from URL
+    if (initialMountRef.current) {
+      logger.debug('[OTPBroadcast] Skipping during initial mount');
+      return;
+    }
+
+    // Skip if we initiated this change
+    if (ignoreNextBroadcastRef.current) {
+      logger.debug('[OTPBroadcast] Ignoring broadcast (we initiated this change)');
+      ignoreNextBroadcastRef.current = false;
+      return;
+    }
+
+    // Skip if otpFromServer hasn't actually changed from our current state
+    // Handle both null and undefined as "no OTP"
+    const serverOtp = otpFromServer || null;
+    const currentOtp = otp || null;
+    if (serverOtp === currentOtp) {
+      logger.debug('[OTPBroadcast] No change in OTP, skipping');
+      return;
+    }
+
+    logger.debug('[OTPBroadcast] Received OTP broadcast:', { otpFromServer, currentOtp: otp });
+
+    if (otpFromServer) {
+      // OTP enabled
+      setOtp(otpFromServer);
+      setOtpEnabled(true);
+      window.history.replaceState(null, "", `#${documentId}?otp=${otpFromServer}`);
+      toast({
+        title: "OTP Updated",
+        description: "Document protection has been enabled by another user",
+        status: "info",
+        duration: 3000,
+        isClosable: true,
+      });
+    } else if (!otpFromServer && otp) {
+      // OTP disabled (null or undefined)
+      setOtp(null);
+      setOtpEnabled(false);
+      window.history.replaceState(null, "", `#${documentId}`);
+      toast({
+        title: "OTP Removed",
+        description: "Document protection has been disabled by another user",
+        status: "info",
+        duration: 3000,
+        isClosable: true,
+      });
+    }
+  }, [otpFromServer, documentId, toast, otp]);
 
   // For sharing the document by link to others.
-  const documentUrl = `${window.location.origin}/#${documentId}`;
+  const documentUrl = otp
+    ? `${window.location.origin}/#${documentId}?otp=${otp}`
+    : `${window.location.origin}/#${documentId}`;
+
+  async function handleOtpToggle(checked: boolean) {
+    setIsToggling(true);
+    ignoreNextBroadcastRef.current = true;
+    try {
+      if (checked) {
+        // Enable OTP protection
+        const response = await fetch(`/api/document/${documentId}/protect`, {
+          method: "POST",
+        });
+        if (!response.ok) {
+          throw new Error("Failed to enable OTP protection");
+        }
+        const data = await response.json();
+        setOtp(data.otp);
+        setOtpEnabled(true);
+        // Update browser URL to include OTP parameter
+        window.history.replaceState(null, "", `#${documentId}?otp=${data.otp}`);
+        toast({
+          title: "OTP Protection Enabled",
+          description: "Document is now protected with a secure token",
+          status: "success",
+          duration: 3000,
+          isClosable: true,
+        });
+      } else {
+        // Disable OTP protection
+        const response = await fetch(`/api/document/${documentId}/protect`, {
+          method: "DELETE",
+        });
+        if (!response.ok) {
+          throw new Error("Failed to disable OTP protection");
+        }
+        setOtp(null);
+        setOtpEnabled(false);
+        // Update browser URL to remove OTP parameter
+        window.history.replaceState(null, "", `#${documentId}`);
+        toast({
+          title: "OTP Protection Disabled",
+          description: "Document is now accessible without a token",
+          status: "info",
+          duration: 3000,
+          isClosable: true,
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to toggle OTP protection",
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+      });
+      // Revert the toggle state on error
+      setOtpEnabled(!checked);
+      ignoreNextBroadcastRef.current = false;
+    } finally {
+      setIsToggling(false);
+    }
+  }
 
   async function handleCopy() {
     await navigator.clipboard.writeText(documentUrl);
@@ -115,6 +261,19 @@ function Sidebar({
       <Heading mt={4} mb={1.5} size="sm">
         Share Link
       </Heading>
+      <FormControl display="flex" alignItems="center" mb={2}>
+        <FormLabel htmlFor="otp-toggle" mb="0" fontSize="sm">
+          OTP
+        </FormLabel>
+        <Switch
+          id="otp-toggle"
+          isChecked={otpEnabled}
+          onChange={(e) => handleOtpToggle(e.target.checked)}
+          isDisabled={isToggling}
+          colorScheme="blue"
+          size="sm"
+        />
+      </FormControl>
       <InputGroup size="sm">
         <Input
           readOnly

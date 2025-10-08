@@ -19,6 +19,8 @@ export type KolabpadOptions = {
   readonly onDesynchronized?: () => void;
   readonly onChangeLanguage?: (language: string) => void;
   readonly onChangeUsers?: (users: Record<number, UserInfo>) => void;
+  readonly onAuthError?: () => void;
+  readonly onChangeOTP?: (otp: string | null) => void;
   readonly reconnectInterval?: number;
 };
 
@@ -139,7 +141,7 @@ class Kolabpad {
         this.sendOperation(this.outstanding);
       }
     };
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       if (this.ws) {
         this.ws = undefined;
         this.options.onDisconnected?.();
@@ -151,6 +153,12 @@ class Kolabpad {
         }
       } else {
         this.connecting = false;
+        // Check if this was an authentication error (connection refused during handshake)
+        // WebSocket close code 1002 = protocol error, or 1006 = abnormal closure
+        if ((event.code === 1006 || event.code === 1002) && this.recentFailures === 0) {
+          // First connection attempt failed - likely auth error
+          this.options.onAuthError?.();
+        }
       }
     };
     ws.onmessage = ({ data }) => {
@@ -210,6 +218,10 @@ class Kolabpad {
         this.userCursors[id] = data;
         this.updateCursors();
       }
+    } else if (msg.OTP !== undefined) {
+      const { otp } = msg.OTP;
+      logger.debug(`[OTP] Changed to: ${otp || 'disabled'}`);
+      this.options.onChangeOTP?.(otp);
     }
   }
 
@@ -503,6 +515,9 @@ type ServerMsg = {
   UserCursor?: {
     id: number;
     data: CursorData;
+  };
+  OTP?: {
+    otp: string | null;
   };
 };
 

@@ -49,6 +49,7 @@ type ServerMsg struct {
 	Language   *string       `json:"Language,omitempty"`
 	UserInfo   *UserInfoMsg  `json:"UserInfo,omitempty"`
 	UserCursor *UserCursorMsg `json:"UserCursor,omitempty"`
+	OTP        *OTPMsg       `json:"OTP,omitempty"`
 }
 
 // HistoryMsg sends a batch of operations to the client.
@@ -69,6 +70,11 @@ type UserCursorMsg struct {
 	Data CursorData `json:"data"` // Cursor positions
 }
 
+// OTPMsg broadcasts OTP changes to authenticated clients.
+type OTPMsg struct {
+	OTP *string `json:"otp"` // OTP token, or nil if disabled
+}
+
 // MarshalJSON implements custom JSON marshaling for ServerMsg.
 // We need to ensure only one field is present in the JSON output.
 func (m *ServerMsg) MarshalJSON() ([]byte, error) {
@@ -85,6 +91,8 @@ func (m *ServerMsg) MarshalJSON() ([]byte, error) {
 		result["UserInfo"] = m.UserInfo
 	} else if m.UserCursor != nil {
 		result["UserCursor"] = m.UserCursor
+	} else if m.OTP != nil {
+		result["OTP"] = m.OTP
 	}
 
 	return json.Marshal(result)
@@ -158,4 +166,9 @@ func NewUserInfoMsg(id uint64, info *UserInfo) *ServerMsg {
 // NewUserCursorMsg creates a UserCursor server message.
 func NewUserCursorMsg(id uint64, data CursorData) *ServerMsg {
 	return &ServerMsg{UserCursor: &UserCursorMsg{ID: id, Data: data}}
+}
+
+// NewOTPMsg creates an OTP server message.
+func NewOTPMsg(otp *string) *ServerMsg {
+	return &ServerMsg{OTP: &OTPMsg{OTP: otp}}
 }

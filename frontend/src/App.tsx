@@ -6,6 +6,7 @@ import { VscChevronRight, VscFolderOpened, VscGist } from "react-icons/vsc";
 import useLocalStorageState from "use-local-storage-state";
 
 import kolabpadRaw from "../../pkg/server/kolabpad.go?raw";
+import AuthBlockedDialog from "./AuthBlockedDialog";
 import Footer from "./Footer";
 import ReadCodeConfirm from "./ReadCodeConfirm";
 import Sidebar from "./Sidebar";
@@ -18,6 +19,14 @@ import useHash from "./useHash";
 function getWsUri(id: string) {
   let url = new URL(`api/socket/${id}`, window.location.href);
   url.protocol = url.protocol == "https:" ? "wss:" : "ws:";
+
+  // Add OTP parameter if present in the URL
+  const params = new URLSearchParams(window.location.hash.split('?')[1]);
+  const otp = params.get('otp');
+  if (otp) {
+    url.searchParams.set('otp', otp);
+  }
+
   return url.href;
 }
 
@@ -50,6 +59,17 @@ function App() {
   const id = useHash();
 
   const [readCodeConfirmOpen, setReadCodeConfirmOpen] = useState(false);
+  const authErrorShownRef = useRef(false);
+  const [otpFromServer, setOtpFromServer] = useState<string | null>(null);
+  const [isAuthBlocked, setIsAuthBlocked] = useState(false);
+
+  // Reset App-level state when navigating to a different document
+  // Note: Sidebar state resets automatically via key={id} remounting
+  useEffect(() => {
+    setOtpFromServer(null);       // Clear OTP broadcasts from old document
+    setIsAuthBlocked(false);       // Clear auth error state
+    authErrorShownRef.current = false; // Allow new auth error to show
+  }, [id]);
 
   useEffect(() => {
     if (editor?.getModel()) {
@@ -70,12 +90,22 @@ function App() {
             duration: null,
           });
         },
+        onAuthError: () => {
+          if (!authErrorShownRef.current) {
+            authErrorShownRef.current = true;
+            setConnection("disconnected");
+            setIsAuthBlocked(true);
+          }
+        },
         onChangeLanguage: (language) => {
           if (languages.includes(language)) {
             setLanguage(language);
           }
         },
         onChangeUsers: setUsers,
+        onChangeOTP: (otp) => {
+          setOtpFromServer(otp);
+        },
       });
       return () => {
         kolabpad.current?.dispose();
@@ -157,19 +187,24 @@ function App() {
         Kolabpad
       </Box>
       <Flex flex="1 0" minH={0}>
-        <Sidebar
-          documentId={id}
-          connection={connection}
-          darkMode={darkMode}
-          language={language}
-          currentUser={{ name, hue }}
-          users={users}
-          onDarkModeChange={handleDarkModeChange}
-          onLanguageChange={handleLanguageChange}
-          onLoadSample={() => handleLoadSample(false)}
-          onChangeName={(name) => name.length > 0 && setName(name)}
-          onChangeColor={() => setHue(generateHue())}
-        />
+        {!isAuthBlocked && (
+          <Sidebar
+            key={id} // Force complete remount when document changes
+            documentId={id}
+            connection={connection}
+            darkMode={darkMode}
+            language={language}
+            currentUser={{ name, hue }}
+            users={users}
+            onDarkModeChange={handleDarkModeChange}
+            onLanguageChange={handleLanguageChange}
+            onLoadSample={() => handleLoadSample(false)}
+            onChangeName={(name) => name.length > 0 && setName(name)}
+            onChangeColor={() => setHue(generateHue())}
+            otpFromServer={otpFromServer}
+          />
+        )}
+        <AuthBlockedDialog isOpen={isAuthBlocked} />
         <ReadCodeConfirm
           isOpen={readCodeConfirmOpen}
           onClose={() => setReadCodeConfirmOpen(false)}
