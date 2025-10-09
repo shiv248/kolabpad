@@ -46,6 +46,8 @@ class Kolabpad {
   private connecting?: boolean;
   private recentFailures: number = 0;
   private everConnected: boolean = false; // Track if we've ever successfully connected
+  private disposed: boolean = false; // Track if instance has been disposed
+  private readonly documentId: string; // Document ID extracted from URI
   private readonly model: editor.ITextModel;
   private readonly onChangeHandle: IDisposable;
   private readonly onCursorHandle: IDisposable;
@@ -69,8 +71,20 @@ class Kolabpad {
   private ignoreChanges: boolean = false;
   private oldDecorations: string[] = [];
 
+  // CSS style management (instance-scoped to prevent memory leaks)
+  // eslint-disable-next-line no-undef
+  private styleElement?: HTMLStyleElement;
+  private styleSheet?: CSSStyleSheet;
+  private generatedHues = new Set<number>();
+
   constructor(readonly options: KolabpadOptions) {
     this.model = options.editor.getModel()!;
+
+    // Extract document ID from WebSocket URI for message validation
+    const uriMatch = options.uri.match(/\/socket\/([^/?]+)/);
+    this.documentId = uriMatch ? uriMatch[1] : "";
+    logger.debug("[Kolabpad] Initialized for document:", this.documentId);
+
     this.onChangeHandle = options.editor.onDidChangeModelContent((e) =>
       this.onChange(e),
     );
@@ -104,6 +118,10 @@ class Kolabpad {
 
   /** Destroy this Kolabpad instance and close any sockets. */
   dispose() {
+    // Mark as disposed to ignore any stale WebSocket messages
+    this.disposed = true;
+    logger.debug("[Kolabpad] Disposed instance for document:", this.documentId);
+
     window.clearInterval(this.tryConnectId);
     window.clearInterval(this.resetFailuresId);
     this.onSelectionHandle.dispose();
@@ -111,6 +129,14 @@ class Kolabpad {
     this.onChangeHandle.dispose();
     window.removeEventListener("beforeunload", this.beforeUnload);
     this.ws?.close();
+
+    // Clean up CSS styles to prevent memory leak
+    if (this.styleElement) {
+      this.styleElement.remove();
+      this.styleElement = undefined;
+      this.styleSheet = undefined;
+      this.generatedHues.clear();
+    }
   }
 
   /** Try to set the language of the editor, if connected. */
@@ -182,6 +208,12 @@ class Kolabpad {
   }
 
   private handleMessage(msg: ServerMsg) {
+    // Ignore messages if this instance has been disposed (prevents stale messages)
+    if (this.disposed) {
+      logger.warn("[WebSocket] Ignoring message - instance disposed for document:", this.documentId);
+      return;
+    }
+
     if (msg.Identity !== undefined) {
       this.me = msg.Identity;
       logger.debug("[Identity] Assigned ID:", this.me);
@@ -407,7 +439,7 @@ class Kolabpad {
     for (const [id, data] of Object.entries(this.userCursors)) {
       if (id in this.users) {
         const { hue, name } = this.users[id as any];
-        generateCssStyles(hue);
+        this.generateCssStyles(hue);
 
         for (const cursor of data.cursors) {
           const position = unicodePosition(this.model, cursor);
@@ -525,6 +557,33 @@ class Kolabpad {
     }
     return parts.join(", ");
   }
+
+  /**
+   * Add CSS styles for a remote user's cursor and selection.
+   * Instance method to prevent memory leaks across document switches.
+   */
+  private generateCssStyles(hue: number) {
+    if (this.generatedHues.has(hue)) return;
+
+    // Create stylesheet on first use for this document
+    if (!this.styleSheet) {
+      this.styleElement = document.createElement("style");
+      document.head.appendChild(this.styleElement);
+      this.styleSheet = this.styleElement.sheet as CSSStyleSheet;
+    }
+
+    this.generatedHues.add(hue);
+
+    // Add rules to instance-scoped stylesheet
+    this.styleSheet.insertRule(
+      `.monaco-editor .remote-selection-${hue} { background-color: hsla(${hue}, 90%, 80%, 0.5); }`,
+      this.styleSheet.cssRules.length
+    );
+    this.styleSheet.insertRule(
+      `.monaco-editor .remote-cursor-${hue} { border-left: 2px solid hsl(${hue}, 90%, 25%); }`,
+      this.styleSheet.cssRules.length
+    );
+  }
 }
 
 type UserOperation = {
@@ -583,36 +642,6 @@ function unicodePosition(model: editor.ITextModel, offset: number): IPosition {
     offset -= 1;
   }
   return model.getPositionAt(offsetUTF16);
-}
-
-/** Shared stylesheet for all remote cursor/selection styles. */
-let sharedStyleSheet: CSSStyleSheet | null = null;
-
-/** Cache of hues we've already generated styles for. */
-const generatedHues = new Set<number>();
-
-/** Add CSS styles for a remote user's cursor and selection. */
-function generateCssStyles(hue: number) {
-  if (generatedHues.has(hue)) return;
-
-  // Create shared stylesheet on first use
-  if (!sharedStyleSheet) {
-    const style = document.createElement("style");
-    document.head.appendChild(style);
-    sharedStyleSheet = style.sheet as CSSStyleSheet;
-  }
-
-  generatedHues.add(hue);
-
-  // Add rules to shared stylesheet
-  sharedStyleSheet.insertRule(
-    `.monaco-editor .remote-selection-${hue} { background-color: hsla(${hue}, 90%, 80%, 0.5); }`,
-    sharedStyleSheet.cssRules.length
-  );
-  sharedStyleSheet.insertRule(
-    `.monaco-editor .remote-cursor-${hue} { border-left: 2px solid hsl(${hue}, 90%, 25%); }`,
-    sharedStyleSheet.cssRules.length
-  );
 }
 
 export default Kolabpad;

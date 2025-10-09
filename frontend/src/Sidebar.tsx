@@ -19,7 +19,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { IoMoon, IoSunny } from "react-icons/io5";
 import { VscRepo } from "react-icons/vsc";
-import { UI, USER } from "./constants";
+import { UI } from "./constants";
 import { logger } from "./logger";
 
 import ConnectionStatus from "./ConnectionStatus";
