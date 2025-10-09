@@ -3,10 +3,10 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"math/rand"
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"nhooyr.io/websocket"
@@ -17,8 +17,12 @@ import (
 
 // Document represents a document entry in the server map.
 type Document struct {
-	LastAccessed time.Time
-	Kolabpad      *Kolabpad
+	LastAccessed     time.Time
+	Kolabpad         *Kolabpad
+	persisterCancel  context.CancelFunc // Cancel function to stop persister
+	persisterMu      sync.Mutex         // Protects persister start/stop
+	connectionCount  int                // Number of active connections
+	connectionCountMu sync.Mutex        // Protects connectionCount
 }
 
 // ServerState holds all server-wide state.
@@ -94,14 +98,28 @@ func (s *Server) handleSocket(w http.ResponseWriter, r *http.Request) {
 
 	logger.Info("WebSocket connection request for document: %s", docID)
 
-	// Validate OTP if document is protected
-	if s.state.db != nil {
-		if persisted, err := s.state.db.Load(docID); err == nil && persisted != nil && persisted.OTP != nil {
-			providedOTP := r.URL.Query().Get("otp")
-			if providedOTP != *persisted.OTP {
+	// Validate OTP with dual-check pattern (prevents DoS)
+	providedOTP := r.URL.Query().Get("otp")
+
+	// Fast path: Document already in memory
+	if val, ok := s.state.documents.Load(docID); ok {
+		doc := val.(*Document)
+		if otp := doc.Kolabpad.GetOTP(); otp != nil {
+			if providedOTP != *otp {
 				http.Error(w, "Invalid or missing OTP", http.StatusUnauthorized)
-				logger.Info("Unauthorized access attempt for document: %s", docID)
+				logger.Info("Unauthorized access attempt for hot document: %s", docID)
 				return
+			}
+		}
+	} else {
+		// Slow path: Document not in memory - validate from DB BEFORE loading
+		if s.state.db != nil {
+			if persisted, err := s.state.db.Load(docID); err == nil && persisted != nil && persisted.OTP != nil {
+				if providedOTP != *persisted.OTP {
+					http.Error(w, "Invalid or missing OTP", http.StatusUnauthorized)
+					logger.Info("Unauthorized access attempt for cold document: %s (prevented DoS)", docID)
+					return
+				}
 			}
 		}
 	}
@@ -110,10 +128,62 @@ func (s *Server) handleSocket(w http.ResponseWriter, r *http.Request) {
 	doc := s.getOrCreateDocument(docID)
 	doc.LastAccessed = time.Now()
 
-	// Start persister if database is enabled
-	if s.state.db != nil {
-		go s.persister(r.Context(), docID, doc.Kolabpad)
+	// Track connection count and start persister if needed
+	doc.connectionCountMu.Lock()
+	doc.connectionCount++
+	isFirstConnection := doc.connectionCount == 1
+	doc.connectionCountMu.Unlock()
+
+	// Start persister for first connection
+	if isFirstConnection && s.state.db != nil {
+		doc.persisterMu.Lock()
+		ctx, cancel := context.WithCancel(context.Background())
+		doc.persisterCancel = cancel
+		go s.persister(ctx, docID, doc.Kolabpad)
+		doc.persisterMu.Unlock()
+		logger.Info("Started persister for document %s (first connection)", docID)
 	}
+
+	// Ensure persister is stopped when last connection closes
+	defer func() {
+		doc.connectionCountMu.Lock()
+		doc.connectionCount--
+		isLastConnection := doc.connectionCount == 0
+		doc.connectionCountMu.Unlock()
+
+		if isLastConnection && s.state.db != nil {
+			doc.persisterMu.Lock()
+			if doc.persisterCancel != nil {
+				// Only flush if document was edited OR has OTP protection
+				revision := doc.Kolabpad.Revision()
+				otp := doc.Kolabpad.GetOTP()
+
+				if revision > 0 || otp != nil {
+					// Flush to DB immediately before stopping
+					text, language := doc.Kolabpad.Snapshot()
+
+					if err := s.state.db.Store(&database.PersistedDocument{
+						ID:       docID,
+						Text:     text,
+						Language: language,
+						OTP:      otp,
+					}); err != nil {
+						logger.Error("Failed to flush document %s on last disconnect: %v", docID, err)
+					} else {
+						logger.Debug("Flushed document %s on last disconnect (revision=%d, protected=%v)", docID, revision, otp != nil)
+					}
+				} else {
+					logger.Debug("Skipping flush for empty unprotected document %s (never edited)", docID)
+				}
+
+				// Stop persister
+				doc.persisterCancel()
+				doc.persisterCancel = nil
+				logger.Info("Stopped persister for document %s (last connection closed)", docID)
+			}
+			doc.persisterMu.Unlock()
+		}
+	}()
 
 	// Upgrade to WebSocket
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
@@ -230,6 +300,7 @@ func (s *Server) handleProtectDocument(w http.ResponseWriter, r *http.Request, d
 	// Generate OTP
 	otp := GenerateOTP()
 
+	// CRITICAL: Write to DB FIRST (atomicity - prevents memory/DB desync)
 	// Check if document exists in DB, if not create it
 	doc, err := s.state.db.Load(docID)
 	if err != nil {
@@ -249,23 +320,23 @@ func (s *Server) handleProtectDocument(w http.ResponseWriter, r *http.Request, d
 		if err := s.state.db.Store(doc); err != nil {
 			logger.Error("Failed to store document: %v", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
-			return
+			return // DB write failed - do NOT update memory
 		}
 	} else {
 		// Update existing document's OTP
 		if err := s.state.db.UpdateOTP(docID, &otp); err != nil {
 			logger.Error("Failed to update OTP: %v", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
-			return
+			return // DB write failed - do NOT update memory
 		}
 	}
 
-	logger.Info("Document %s protected with OTP", docID)
+	logger.Info("Document %s protected with OTP (DB write successful)", docID)
 
-	// Broadcast OTP to all connected clients
+	// DB write successful - NOW update memory and broadcast
 	if val, ok := s.state.documents.Load(docID); ok {
 		doc := val.(*Document)
-		doc.Kolabpad.SetOTP(&otp)
+		doc.Kolabpad.SetOTP(&otp) // Updates memory + broadcasts to clients
 	}
 
 	// Return OTP to client
@@ -277,19 +348,20 @@ func (s *Server) handleProtectDocument(w http.ResponseWriter, r *http.Request, d
 
 // handleUnprotectDocument disables OTP protection for a document.
 func (s *Server) handleUnprotectDocument(w http.ResponseWriter, r *http.Request, docID string) {
+	// CRITICAL: Write to DB FIRST (atomicity - prevents memory/DB desync)
 	// Remove OTP by setting it to NULL
 	if err := s.state.db.UpdateOTP(docID, nil); err != nil {
 		logger.Error("Failed to remove OTP: %v", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
+		return // DB write failed - do NOT update memory
 	}
 
-	logger.Info("Document %s unprotected (OTP removed)", docID)
+	logger.Info("Document %s unprotected (OTP removed, DB write successful)", docID)
 
-	// Broadcast OTP removal to all connected clients
+	// DB write successful - NOW update memory and broadcast
 	if val, ok := s.state.documents.Load(docID); ok {
 		doc := val.(*Document)
-		doc.Kolabpad.SetOTP(nil)
+		doc.Kolabpad.SetOTP(nil) // Updates memory + broadcasts to clients
 	}
 
 	w.WriteHeader(http.StatusNoContent)
@@ -307,7 +379,7 @@ func (s *Server) getOrCreateDocument(id string) *Document {
 	if s.state.db != nil {
 		if persisted, err := s.state.db.Load(id); err == nil && persisted != nil {
 			logger.Debug("Loaded document %s from database", id)
-			kolabpad = FromPersistedDocument(persisted.Text, persisted.Language, s.state.maxDocumentSize, s.state.broadcastBufferSize)
+			kolabpad = FromPersistedDocument(persisted.Text, persisted.Language, persisted.OTP, s.state.maxDocumentSize, s.state.broadcastBufferSize)
 		}
 	}
 
@@ -358,10 +430,44 @@ func (s *Server) cleanupExpiredDocuments(expiryDays int) {
 	})
 
 	if len(toDelete) > 0 {
-		logger.Debug("cleaner removing documents: %v", toDelete)
+		logger.Debug("cleaner removing %d document(s): %v", len(toDelete), toDelete)
+
 		for _, id := range toDelete {
 			if val, ok := s.state.documents.LoadAndDelete(id); ok {
 				doc := val.(*Document)
+
+				// Only flush if document was edited OR has OTP protection
+				if s.state.db != nil {
+					revision := doc.Kolabpad.Revision()
+					otp := doc.Kolabpad.GetOTP()
+
+					if revision > 0 || otp != nil {
+						text, language := doc.Kolabpad.Snapshot()
+
+						if err := s.state.db.Store(&database.PersistedDocument{
+							ID:       id,
+							Text:     text,
+							Language: language,
+							OTP:      otp,
+						}); err != nil {
+							logger.Error("Failed to flush document %s before eviction: %v", id, err)
+						} else {
+							logger.Debug("Flushed document %s before eviction (revision=%d, protected=%v)", id, revision, otp != nil)
+						}
+					} else {
+						logger.Debug("Skipping flush for empty unprotected document %s before eviction", id)
+					}
+
+					// Stop persister if running
+					doc.persisterMu.Lock()
+					if doc.persisterCancel != nil {
+						doc.persisterCancel()
+						doc.persisterCancel = nil
+					}
+					doc.persisterMu.Unlock()
+				}
+
+				// Kill document
 				doc.Kolabpad.Kill()
 			}
 		}
@@ -376,50 +482,158 @@ func (s *Server) ListenAndServe(addr string) error {
 
 // Shutdown gracefully shuts down the server.
 func (s *Server) Shutdown(ctx context.Context) error {
+	if s.state.db == nil {
+		// No database - just kill all documents
+		s.state.documents.Range(func(key, value interface{}) bool {
+			doc := value.(*Document)
+			doc.Kolabpad.Kill()
+			return true
+		})
+		return nil
+	}
+
+	logger.Info("Graceful shutdown: flushing all documents to DB")
+
+	// Flush all documents in parallel with timeout
+	var wg sync.WaitGroup
+	var flushedCount, skippedCount, errorCount int32
+
+	s.state.documents.Range(func(key, value interface{}) bool {
+		docID := key.(string)
+		doc := value.(*Document)
+
+		wg.Add(1)
+		go func(id string, d *Document) {
+			defer wg.Done()
+
+			// Only flush if document was edited OR has OTP protection
+			revision := d.Kolabpad.Revision()
+			otp := d.Kolabpad.GetOTP()
+
+			if revision > 0 || otp != nil {
+				// Flush to DB
+				text, language := d.Kolabpad.Snapshot()
+
+				if err := s.state.db.Store(&database.PersistedDocument{
+					ID:       id,
+					Text:     text,
+					Language: language,
+					OTP:      otp,
+				}); err != nil {
+					logger.Error("Failed to flush document %s during shutdown: %v", id, err)
+					atomic.AddInt32(&errorCount, 1)
+				} else {
+					logger.Debug("Flushed document %s during shutdown (revision=%d, protected=%v)", id, revision, otp != nil)
+					atomic.AddInt32(&flushedCount, 1)
+				}
+			} else {
+				logger.Debug("Skipping flush for empty unprotected document %s during shutdown", id)
+				atomic.AddInt32(&skippedCount, 1)
+			}
+
+			// Stop persister if running
+			d.persisterMu.Lock()
+			if d.persisterCancel != nil {
+				d.persisterCancel()
+				d.persisterCancel = nil
+			}
+			d.persisterMu.Unlock()
+		}(docID, doc)
+
+		return true
+	})
+
+	// Wait for all flushes with timeout
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		logger.Info("Shutdown flush complete: %d flushed, %d skipped (empty), %d errors", flushedCount, skippedCount, errorCount)
+	case <-time.After(10 * time.Second):
+		logger.Error("Shutdown timeout after 10s, some documents may not be flushed")
+	}
+
 	// Kill all documents
 	s.state.documents.Range(func(key, value interface{}) bool {
 		doc := value.(*Document)
 		doc.Kolabpad.Kill()
 		return true
 	})
+
+	logger.Info("Shutdown complete")
 	return nil
 }
 
-// persister periodically saves a document to the database.
+// persister periodically saves a document to the database with lazy persistence.
 func (s *Server) persister(ctx context.Context, id string, kolabpad *Kolabpad) {
 	if s.state.db == nil {
 		return
 	}
 
-	const persistInterval = 3 * time.Second
-	const persistJitter = 1 * time.Second
+	const persistCheckInterval = 10 * time.Second
+	const idleWriteThreshold = 30 * time.Second
+	const safetyNetInterval = 5 * time.Minute
 
-	lastRevision := 0
+	lastPersistedRev := 0
+	lastPersistTime := time.Now()
+
+	ticker := time.NewTicker(persistCheckInterval)
+	defer ticker.Stop()
 
 	for {
-		// Add random jitter to avoid thundering herd
-		jitter := time.Duration(rand.Int63n(int64(persistJitter)))
 		select {
 		case <-ctx.Done():
+			logger.Debug("persister for document %s stopped (context cancelled)", id)
 			return
-		case <-time.After(persistInterval + jitter):
+		case <-ticker.C:
 		}
 
 		// Check if document has been killed
 		if kolabpad.Killed() {
+			logger.Debug("persister for document %s stopped (document killed)", id)
 			return
 		}
 
 		// Check if there are new changes
 		revision := kolabpad.Revision()
-		if revision > lastRevision {
-			text, language := kolabpad.Snapshot()
+		if revision <= lastPersistedRev {
+			continue // No changes since last persist
+		}
 
-			// Load existing document to preserve OTP
-			var otp *string
-			if existing, err := s.state.db.Load(id); err == nil && existing != nil {
-				otp = existing.OTP
-			}
+		// Debounce: Skip if critical write happened recently
+		timeSinceCritical := time.Now().Unix() - kolabpad.lastCriticalWrite.Load()
+		if timeSinceCritical < 2 {
+			logger.Debug("persister skipping for document %s: critical write %ds ago", id, timeSinceCritical)
+			continue
+		}
+
+		// Check write triggers
+		timeSinceEdit := time.Since(kolabpad.LastEditTime())
+		timeSincePersist := time.Since(lastPersistTime)
+
+		shouldWrite := false
+		reason := ""
+
+		// Trigger 1: Idle threshold
+		if timeSinceEdit >= idleWriteThreshold {
+			shouldWrite = true
+			reason = "idle"
+		}
+
+		// Trigger 2: Safety net
+		if timeSincePersist >= safetyNetInterval {
+			shouldWrite = true
+			reason = "safety_net"
+		}
+
+		// Write to DB if triggered
+		if shouldWrite {
+			text, language := kolabpad.Snapshot()
+			otp := kolabpad.GetOTP() // Get OTP from memory, not DB
 
 			doc := &database.PersistedDocument{
 				ID:       id,
@@ -428,11 +642,14 @@ func (s *Server) persister(ctx context.Context, id string, kolabpad *Kolabpad) {
 				OTP:      otp,
 			}
 
-			logger.Debug("persisting revision %d for id = %s", revision, id)
+			logger.Debug("persisting document %s: reason=%s, revision=%d, timeSinceEdit=%v, timeSincePersist=%v",
+				id, reason, revision, timeSinceEdit, timeSincePersist)
+
 			if err := s.state.db.Store(doc); err != nil {
 				logger.Error("error persisting document %s: %v", id, err)
 			} else {
-				lastRevision = revision
+				lastPersistedRev = revision
+				lastPersistTime = time.Now()
 			}
 		}
 	}

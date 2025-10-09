@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/shiv248/kolabpad/internal/protocol"
 	"github.com/shiv248/kolabpad/pkg/logger"
@@ -16,20 +17,24 @@ type State struct {
 	Operations []protocol.UserOperation     // Complete operation history
 	Text       string                        // Current document text
 	Language   *string                       // Syntax highlighting language
+	OTP        *string                       // One-time password for document protection
 	Users      map[uint64]protocol.UserInfo  // Connected users
 	Cursors    map[uint64]protocol.CursorData // User cursor positions
 }
 
 // Kolabpad is the main collaborative editing session manager.
 type Kolabpad struct {
-	state               *State
-	mu                  sync.RWMutex
-	count               atomic.Uint64                         // User ID counter
-	killed              atomic.Bool                           // Document destruction flag
-	subscribers         map[uint64]chan *protocol.ServerMsg  // Per-connection channels for metadata broadcasts
-	notify              chan struct{}                         // Closed to wake all connections when new operations arrive
-	maxDocumentSize     int                                   // Maximum document size in bytes
-	broadcastBufferSize int                                   // Buffer size for metadata broadcast channels
+	state                *State
+	mu                   sync.RWMutex
+	count                atomic.Uint64                         // User ID counter
+	killed               atomic.Bool                           // Document destruction flag
+	lastEditTime         atomic.Int64                          // Unix timestamp of last edit (for idle detection)
+	lastPersistedRevision atomic.Int32                         // Last revision written to DB
+	lastCriticalWrite    atomic.Int64                          // Unix timestamp of last critical write (OTP changes)
+	subscribers          map[uint64]chan *protocol.ServerMsg  // Per-connection channels for metadata broadcasts
+	notify               chan struct{}                         // Closed to wake all connections when new operations arrive
+	maxDocumentSize      int                                   // Maximum document size in bytes
+	broadcastBufferSize  int                                   // Buffer size for metadata broadcast channels
 }
 
 // NewKolabpad creates a new collaborative editing session.
@@ -50,8 +55,11 @@ func NewKolabpad(maxDocumentSize, broadcastBufferSize int) *Kolabpad {
 }
 
 // FromPersistedDocument creates a Kolabpad instance from a persisted document.
-func FromPersistedDocument(text string, language *string, maxDocumentSize, broadcastBufferSize int) *Kolabpad {
+func FromPersistedDocument(text string, language *string, otp *string, maxDocumentSize, broadcastBufferSize int) *Kolabpad {
 	r := NewKolabpad(maxDocumentSize, broadcastBufferSize)
+
+	// Initialize OTP from persisted state
+	r.state.OTP = otp
 
 	// Create an initial insert operation for the loaded text
 	if text != "" {
@@ -95,6 +103,29 @@ func (r *Kolabpad) Snapshot() (text string, language *string) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.state.Text, r.state.Language
+}
+
+// GetOTP returns the current OTP (thread-safe).
+func (r *Kolabpad) GetOTP() *string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.state.OTP
+}
+
+// UserCount returns the number of connected users (thread-safe).
+func (r *Kolabpad) UserCount() int {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return len(r.state.Users)
+}
+
+// LastEditTime returns the time of the last edit.
+func (r *Kolabpad) LastEditTime() time.Time {
+	timestamp := r.lastEditTime.Load()
+	if timestamp == 0 {
+		return time.Time{} // Zero time if never edited
+	}
+	return time.Unix(timestamp, 0)
 }
 
 // Kill marks this document as killed and closes channels to disconnect all clients.
@@ -208,6 +239,9 @@ func (r *Kolabpad) ApplyEdit(userID uint64, revision int, operation *ot.Operatio
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	// Track edit time for idle detection
+	r.lastEditTime.Store(time.Now().Unix())
+
 	currentLen := len(r.state.Operations)
 	oldTextLen := len(r.state.Text)
 
@@ -291,12 +325,23 @@ func (r *Kolabpad) SetLanguage(lang string) {
 	r.state.Language = &lang
 	r.mu.Unlock()
 
+	// Track edit time for idle detection
+	r.lastEditTime.Store(time.Now().Unix())
+
 	// Broadcast to all clients
 	r.broadcast(protocol.NewLanguageMsg(lang))
 }
 
-// SetOTP broadcasts OTP changes to all connected clients.
+// SetOTP updates the OTP in state and broadcasts to all connected clients.
 func (r *Kolabpad) SetOTP(otp *string) {
+	// Update state
+	r.mu.Lock()
+	r.state.OTP = otp
+	r.mu.Unlock()
+
+	// Mark as critical write (for persister debouncing)
+	r.lastCriticalWrite.Store(time.Now().Unix())
+
 	// Broadcast to all authenticated clients
 	r.broadcast(protocol.NewOTPMsg(otp))
 }
