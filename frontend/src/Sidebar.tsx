@@ -95,7 +95,13 @@ function Sidebar({
     const serverOtp = otpFromServer || null;
     const currentOtp = otp || null;
     if (serverOtp === currentOtp) {
-      logger.debug('[OTPBroadcast] No change in OTP, skipping');
+      // Mark initial state as received even if no change (initial sync already complete)
+      if (!initialOtpReceivedRef.current) {
+        initialOtpReceivedRef.current = true;
+        logger.debug('[OTPBroadcast] Initial state in sync, no changes needed');
+      } else {
+        logger.debug('[OTPBroadcast] No change in OTP, skipping');
+      }
       return;
     }
 
