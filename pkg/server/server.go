@@ -31,6 +31,7 @@ type ServerState struct {
 	startTime           time.Time
 	db                  *database.Database // Optional database
 	maxDocumentSize     int
+	maxMessageSize      int64 // WebSocket message size limit (maxDocumentSize + overhead)
 	broadcastBufferSize int
 	wsReadTimeout       time.Duration
 	wsWriteTimeout      time.Duration
@@ -38,10 +39,15 @@ type ServerState struct {
 
 // NewServerState creates a new server state.
 func NewServerState(db *database.Database, maxDocumentSize, broadcastBufferSize int, wsReadTimeout, wsWriteTimeout time.Duration) *ServerState {
+	// Set message size limit to document size + 64KB overhead for JSON encoding
+	const overheadBytes = 64 * 1024
+	maxMessageSize := int64(maxDocumentSize + overheadBytes)
+
 	return &ServerState{
 		startTime:           time.Now(),
 		db:                  db,
 		maxDocumentSize:     maxDocumentSize,
+		maxMessageSize:      maxMessageSize,
 		broadcastBufferSize: broadcastBufferSize,
 		wsReadTimeout:       wsReadTimeout,
 		wsWriteTimeout:      wsWriteTimeout,
@@ -193,6 +199,9 @@ func (s *Server) handleSocket(w http.ResponseWriter, r *http.Request) {
 		logger.Error("WebSocket upgrade failed: %v", err)
 		return
 	}
+
+	// Set message size limit to prevent large message attacks while allowing document-sized operations
+	conn.SetReadLimit(s.state.maxMessageSize)
 
 	// Handle connection
 	connHandler := NewConnection(doc.Kolabpad, conn, s.state.wsReadTimeout, s.state.wsWriteTimeout)
