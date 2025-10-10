@@ -4,6 +4,7 @@ import { useToast } from "@chakra-ui/react";
 import Kolabpad, { UserInfo } from "./kolabpad";
 import languages from "./languages.json";
 import { useSession } from "./SessionProvider";
+import { getOtpFromUrl } from "./utils/url";
 
 /**
  * Document-scoped state that resets when switching documents.
@@ -29,9 +30,7 @@ function getWsUri(id: string) {
   url.protocol = url.protocol == "https:" ? "wss:" : "ws:";
 
   // Add OTP parameter if present in the URL
-  const hashParts = window.location.hash.slice(1).split('?');
-  const params = new URLSearchParams(hashParts[1] || '');
-  const otp = params.get('otp');
+  const otp = getOtpFromUrl();
   if (otp) {
     url.searchParams.set('otp', otp);
   }

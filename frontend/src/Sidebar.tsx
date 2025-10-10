@@ -21,6 +21,7 @@ import { IoMoon, IoSunny } from "react-icons/io5";
 import { VscRepo } from "react-icons/vsc";
 import { UI } from "./constants";
 import { logger } from "./logger";
+import { getOtpFromUrl } from "./utils/url";
 
 import ConnectionStatus from "./ConnectionStatus";
 import { colors, layout } from "./theme";
@@ -63,15 +64,12 @@ function Sidebar({
   const [isToggling, setIsToggling] = useState(false);
   const [copied, setCopied] = useState(false);
   const ignoreNextBroadcastRef = useRef(false);
-  const initialOtpReceivedRef = useRef(false);
 
   // Check if OTP is in the URL on component mount
   // Note: Component remounts completely when documentId changes (via key prop),
   // so this effect runs fresh for each document
   useEffect(() => {
-    const hashParts = window.location.hash.slice(1).split('?');
-    const params = new URLSearchParams(hashParts[1] || '');
-    const otpFromUrl = params.get('otp');
+    const otpFromUrl = getOtpFromUrl();
     if (otpFromUrl) {
       setOtp(otpFromUrl);
       setOtpEnabled(true);
@@ -82,6 +80,9 @@ function Sidebar({
   }, []); // Only runs on mount (component remounts when document changes)
 
   // Sync OTP changes from server
+  // Note: Server does NOT send OTP during initial connection (sendInitial).
+  // It only broadcasts OTP changes when someone explicitly enables/disables it.
+  // Therefore, this effect should ONLY respond to explicit OTP broadcasts, never to null values.
   useEffect(() => {
     // Skip if we initiated this change
     if (ignoreNextBroadcastRef.current) {
@@ -90,54 +91,32 @@ function Sidebar({
       return;
     }
 
-    // Skip if otpFromServer hasn't actually changed from our current state
-    // Handle both null and undefined as "no OTP"
-    const serverOtp = otpFromServer || null;
-    const currentOtp = otp || null;
-    if (serverOtp === currentOtp) {
-      // Mark initial state as received even if no change (initial sync already complete)
-      if (!initialOtpReceivedRef.current) {
-        initialOtpReceivedRef.current = true;
-        logger.debug('[OTPBroadcast] Initial state in sync, no changes needed');
-      } else {
-        logger.debug('[OTPBroadcast] No change in OTP, skipping');
-      }
-      return;
-    }
-
-    // First broadcast from server is just initial state sync, not a change
-    if (!initialOtpReceivedRef.current) {
-      initialOtpReceivedRef.current = true;
-      logger.debug('[OTPBroadcast] First broadcast (initial state sync), no toast');
-      // Sync state silently without showing toast
-      if (otpFromServer) {
-        setOtp(otpFromServer);
-        setOtpEnabled(true);
-        window.history.replaceState(null, "", `#${documentId}?otp=${otpFromServer}`);
-      } else {
-        setOtp(null);
-        setOtpEnabled(false);
-        window.history.replaceState(null, "", `#${documentId}`);
-      }
+    // Skip if server hasn't sent any OTP broadcast yet (null means "no broadcast", not "no OTP")
+    if (otpFromServer === null) {
+      logger.debug('[OTPBroadcast] No OTP broadcast from server yet, keeping URL state');
       return;
     }
 
     logger.debug('[OTPBroadcast] Received OTP change from another user:', { otpFromServer, currentOtp: otp });
 
     if (otpFromServer) {
-      // OTP enabled
+      // OTP enabled by another user
       setOtp(otpFromServer);
       setOtpEnabled(true);
       window.history.replaceState(null, "", `#${documentId}?otp=${otpFromServer}`);
-      toast({
-        title: "OTP Updated",
-        description: "Document protection has been enabled by another user",
-        status: "info",
-        duration: UI.TOAST_INFO_DURATION,
-        isClosable: true,
-      });
+
+      // Show toast only if this is different from our current state
+      if (otpFromServer !== otp) {
+        toast({
+          title: "OTP Updated",
+          description: "Document protection has been enabled by another user",
+          status: "info",
+          duration: UI.TOAST_INFO_DURATION,
+          isClosable: true,
+        });
+      }
     } else if (!otpFromServer && otp) {
-      // OTP disabled (null or undefined)
+      // OTP disabled by another user (server sent empty string or explicitly disabled)
       setOtp(null);
       setOtpEnabled(false);
       window.history.replaceState(null, "", `#${documentId}`);
