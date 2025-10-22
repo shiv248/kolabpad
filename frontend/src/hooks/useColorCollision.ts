@@ -10,7 +10,7 @@ import type { UserInfo } from '../types';
 
 export interface UseColorCollisionOptions {
   connection: 'connected' | 'disconnected' | 'desynchronized';
-  myUserId: number;
+  myUserId: number | null;
   users: Record<number, UserInfo>;
   currentHue: number;
   onHueChange: (newHue: number) => void;
@@ -31,35 +31,33 @@ export function useColorCollision({
 
   useEffect(() => {
     // Only check once when initially connected
-    if (connection !== 'connected' || myUserId === -1 || collisionCheckDoneRef.current) {
-      logger.debug('[ColorCollision] Skipping check:', {
-        connection,
-        myUserId,
-        alreadyChecked: collisionCheckDoneRef.current,
-      });
+    if (connection !== 'connected' || myUserId === null || collisionCheckDoneRef.current) {
+      // Don't log if we're just waiting for user ID assignment (expected flow)
+      if (connection === 'connected' && myUserId === null && !collisionCheckDoneRef.current) {
+        logger.debug('[ColorCollision] Waiting for user ID assignment');
+      }
       return;
     }
 
-    logger.debug('[ColorCollision] Running collision check on join');
+    logger.info('[ColorCollision] Running collision check on join');
 
     // Extract hues from other users (excluding self)
     const existingHues = Object.entries(users)
       .filter(([id]) => Number(id) !== myUserId)
       .map(([, user]) => user.hue);
 
-    logger.debug('[ColorCollision] Existing hues:', existingHues);
-
     // Check if current hue collides with existing users
     if (existingHues.length > 0 && hasHueCollision(currentHue, existingHues)) {
       const newHue = generateHue(existingHues);
-      logger.info('[ColorCollision] Collision detected, changing hue from %d to %d', currentHue, newHue);
+      logger.info('[ColorCollision] Collision detected, changing hue: %d → %d', currentHue, newHue);
       onHueChange(newHue);
     } else {
-      logger.debug('[ColorCollision] No collision detected, keeping hue:', currentHue);
+      logger.debug('[ColorCollision] No collision detected (existing users: %d)', existingHues.length);
     }
 
     // Mark collision check as done for this document session
     collisionCheckDoneRef.current = true;
-    logger.debug('[ColorCollision] Check completed, marked as done');
-  }, [connection, myUserId, users, currentHue, onHueChange]);
+    // onHueChange is stable (setState from useLocalStorageState) - no need as dependency
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connection, myUserId, users, currentHue]);
 }

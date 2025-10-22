@@ -12,7 +12,7 @@ describe('useColorCollision', () => {
 
   const defaultProps = {
     connection: 'disconnected' as const,
-    myUserId: -1,
+    myUserId: null,
     users: {},
     currentHue: 100,
     onHueChange: mockOnHueChange,

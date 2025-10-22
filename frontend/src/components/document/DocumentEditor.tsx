@@ -126,7 +126,7 @@ function DocumentEditor() {
         Kolabpad
       </Box>
       <Flex flex="1 0" minH={0}>
-        {!isAuthBlocked && (
+        {!isAuthBlocked && myUserId !== null && (
           <Sidebar
             documentId={documentId}
             connection={connection}

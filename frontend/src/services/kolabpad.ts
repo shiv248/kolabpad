@@ -80,7 +80,7 @@ class Kolabpad {
     // Extract document ID from WebSocket URI for message validation
     const uriMatch = options.uri.match(/\/socket\/([^/?]+)/);
     this.documentId = uriMatch ? uriMatch[1] : "";
-    logger.debug("[Kolabpad] Initialized for document:", this.documentId);
+    logger.debug("[Kolabpad] WebSocket connecting to:", options.uri);
 
     this.onChangeHandle = options.editor.onDidChangeModelContent((e) =>
       this.onChange(e),

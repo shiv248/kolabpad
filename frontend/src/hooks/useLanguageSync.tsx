@@ -11,7 +11,7 @@ import type { LanguageBroadcast } from '../types';
 
 export interface UseLanguageSyncOptions {
   languageBroadcast: LanguageBroadcast | undefined;
-  myUserId: number;
+  myUserId: number | null;
   onLanguageChange: (language: string) => void;
 }
 
@@ -26,6 +26,7 @@ export function useLanguageSync({
 }: UseLanguageSyncOptions): void {
   const toast = useToast();
 
+  // Only trigger when languageBroadcast actually changes (not when myUserId changes)
   useEffect(() => {
     if (languageBroadcast === undefined) {
       logger.debug('[LanguageBroadcast] No broadcast yet');
@@ -48,30 +49,31 @@ export function useLanguageSync({
     logger.info('[LanguageBroadcast] Language updated to:', languageBroadcast.language);
 
     // Show appropriate toast (skip for initial state)
-    if (isInitialState) {
-      logger.debug('[LanguageBroadcast] Initial state, skipping toast');
-    } else if (isMyChange) {
-      logger.debug('[LanguageBroadcast] Showing toast for own change');
-      toast({
-        title: 'Language updated',
-        description: `All users are now editing in ${languageBroadcast.language}.`,
-        status: 'info',
-        duration: 2000,
-        isClosable: true,
-      });
-    } else {
-      logger.debug('[LanguageBroadcast] Showing toast for remote change by:', languageBroadcast.userName);
-      toast({
-        title: 'Language updated',
-        description: (
-          <>
-            Language changed to {languageBroadcast.language} by <i>{languageBroadcast.userName}</i>
-          </>
-        ),
-        status: 'info',
-        duration: 2000,
-        isClosable: true,
-      });
+    if (!isInitialState) {
+      if (isMyChange) {
+        toast({
+          title: 'Language updated',
+          description: `All users are now editing in ${languageBroadcast.language}.`,
+          status: 'info',
+          duration: 2000,
+          isClosable: true,
+        });
+      } else {
+        toast({
+          title: 'Language updated',
+          description: (
+            <>
+              Language changed to {languageBroadcast.language} by <i>{languageBroadcast.userName}</i>
+            </>
+          ),
+          status: 'info',
+          duration: 2000,
+          isClosable: true,
+        });
+      }
     }
-  }, [languageBroadcast, myUserId, toast, onLanguageChange]);
+    // Note: myUserId is used inside but not a dependency - we read latest value
+    // We only want to run when languageBroadcast changes, not when myUserId changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [languageBroadcast, toast, onLanguageChange]);
 }

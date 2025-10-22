@@ -19,7 +19,7 @@ interface DocumentContextValue {
   documentId: string;
   connection: "connected" | "disconnected" | "desynchronized";
   users: Record<number, UserInfo>;
-  myUserId: number;
+  myUserId: number | null;
   language: string;
   sendLanguageChange: (language: string) => void;
   languageBroadcast: LanguageBroadcast | undefined;
@@ -58,7 +58,7 @@ export function DocumentProvider({
   // Document-scoped state
   const [connection, setConnection] = useState<"connected" | "disconnected" | "desynchronized">("disconnected");
   const [users, setUsers] = useState<Record<number, UserInfo>>({});
-  const [myUserId, setMyUserId] = useState<number>(-1);
+  const [myUserId, setMyUserId] = useState<number | null>(null);
   const [language, setLanguage] = useState("plaintext");
   const [languageBroadcast, setLanguageBroadcast] = useState<LanguageBroadcast | undefined>(undefined);
   const [otpBroadcast, setOtpBroadcast] = useState<OTPBroadcast | undefined>(undefined);
@@ -111,19 +111,14 @@ export function DocumentProvider({
         }
       },
       onChangeLanguage: (language, userId, userName) => {
-        logger.debug('[DocumentProvider] Language broadcast received:', { language, userId, userName });
         if (languages.includes(language)) {
           setLanguageBroadcast({ language, userId, userName });
         } else {
           logger.error('[DocumentProvider] Invalid language received:', language);
         }
       },
-      onChangeUsers: (users) => {
-        logger.debug('[DocumentProvider] Users updated, count:', Object.keys(users).length);
-        setUsers(users);
-      },
+      onChangeUsers: setUsers,
       onChangeOTP: (otp, userId, userName) => {
-        logger.debug('[DocumentProvider] OTP broadcast received:', { otp: otp ? '[REDACTED]' : null, userId, userName });
         setOtpBroadcast({ otp, userId, userName });
       },
     });
@@ -133,12 +128,13 @@ export function DocumentProvider({
       kolabpad.current?.dispose();
       kolabpad.current = undefined;
     };
-  }, [documentId, editor, toast]);
+    // toast is stable from useToast() - no need to include as dependency
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [documentId, editor]);
 
   // Update user info when connected
   useEffect(() => {
     if (connection === "connected") {
-      logger.debug('[DocumentProvider] Updating user info:', { name, hue });
       kolabpad.current?.setInfo({ name, hue });
     }
   }, [connection, name, hue]);
@@ -160,7 +156,6 @@ export function DocumentProvider({
 
   // Helper to send language change - just sends message, no local updates
   const sendLanguageChange = (newLanguage: string) => {
-    logger.debug('[DocumentProvider] Sending language change:', newLanguage);
     kolabpad.current?.setLanguage(newLanguage);
   };
 

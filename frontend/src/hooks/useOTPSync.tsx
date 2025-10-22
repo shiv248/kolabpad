@@ -100,6 +100,7 @@ export function useOTPSync({
   }, []); // Only runs on mount
 
   // Sync OTP changes from server broadcasts
+  // Only trigger when otpBroadcast actually changes (not when currentUserId changes)
   useEffect(() => {
     if (otpBroadcast === undefined) {
       logger.debug('[OTPBroadcast] No broadcast yet');
@@ -154,7 +155,10 @@ export function useOTPSync({
         isClosable: true,
       });
     }
-  }, [otpBroadcast, currentUserId, documentId, toast]);
+    // Note: currentUserId and documentId are used inside but not dependencies
+    // We only want to run when otpBroadcast changes, not when currentUserId changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [otpBroadcast, toast]);
 
   // Toggle OTP protection
   async function toggleOTP(enabled: boolean) {
