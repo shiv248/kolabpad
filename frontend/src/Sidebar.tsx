@@ -121,8 +121,12 @@ function Sidebar({
       } else {
         toast({
           title: "OTP Updated",
-          description: "Document protection has been enabled by another user",
-          status: "info",
+          description: (
+            <>
+              Document protection has been enabled by <i>{otpBroadcast.userName}</i>
+            </>
+          ),
+          status: "success",
           duration: UI.TOAST_INFO_DURATION,
           isClosable: true,
         });
@@ -145,7 +149,11 @@ function Sidebar({
       } else {
         toast({
           title: "OTP Removed",
-          description: "Document protection has been disabled by another user",
+          description: (
+            <>
+              Document protection has been disabled by <i>{otpBroadcast.userName}</i>
+            </>
+          ),
           status: "info",
           duration: UI.TOAST_INFO_DURATION,
           isClosable: true,
