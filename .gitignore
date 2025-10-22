@@ -56,3 +56,6 @@ data/
 # Environment
 .env
 .env.local
+node_modules/
+server
+bin/
