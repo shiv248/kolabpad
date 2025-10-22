@@ -133,7 +133,7 @@ function DocumentEditor() {
             onDarkModeChange={() => setDarkMode(!darkMode)}
             onLanguageChange={sendLanguageChange}
             onLoadSample={() => handleLoadSample(false)}
-            onChangeName={(name) => name.length > 0 && setName(name)}
+            onChangeName={setName}
             onChangeColor={() => setHue(generateHue(Object.values(users).map(u => u.hue)))}
             otpBroadcast={otpBroadcast}
           />

@@ -15,7 +15,7 @@ import {
   Text,
   useDisclosure,
 } from "@chakra-ui/react";
-import { useRef } from "react";
+import { useRef, useState, useEffect } from "react";
 import { FaPalette } from "react-icons/fa";
 import { VscAccount } from "react-icons/vsc";
 
@@ -40,6 +40,34 @@ function User({
 }: UserProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const { isOpen, onOpen, onClose } = useDisclosure();
+
+  // Local state for name input - only commit to parent on "Done"
+  const [localName, setLocalName] = useState(info.name);
+
+  // Sync local state when prop changes (e.g., from broadcasts)
+  useEffect(() => {
+    setLocalName(info.name);
+  }, [info.name]);
+
+  // Handle Done button click - validate and commit changes
+  const handleDone = () => {
+    const trimmedName = localName.trim();
+
+    // Validate: name must not be empty
+    if (trimmedName.length === 0) {
+      // Reset to original name if empty
+      setLocalName(info.name);
+      onClose();
+      return;
+    }
+
+    // Only broadcast if name actually changed
+    if (trimmedName !== info.name) {
+      onChangeName?.(trimmedName);
+    }
+
+    onClose();
+  };
 
   const nameColor = `hsl(${info.hue}, 90%, ${darkMode ? "70%" : "25%"})`;
   return (
@@ -84,9 +112,9 @@ function User({
           <Input
             ref={inputRef}
             mb={2}
-            value={info.name}
+            value={localName}
             maxLength={USER.MAX_NAME_LENGTH}
-            onChange={(event) => onChangeName?.(event.target.value)}
+            onChange={(event) => setLocalName(event.target.value)}
           />
           <Button
             size="sm"
@@ -104,7 +132,7 @@ function User({
           borderColor={darkMode ? colors.dark.border : colors.light.border}
         >
           <ButtonGroup size="sm">
-            <Button colorScheme="blue" onClick={onClose}>
+            <Button colorScheme="blue" onClick={handleDone}>
               Done
             </Button>
           </ButtonGroup>
