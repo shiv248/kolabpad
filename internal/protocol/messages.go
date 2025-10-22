@@ -72,7 +72,9 @@ type UserCursorMsg struct {
 
 // OTPMsg broadcasts OTP changes to authenticated clients.
 type OTPMsg struct {
-	OTP *string `json:"otp"` // OTP token, or nil if disabled
+	OTP      *string `json:"otp"`       // OTP token, or nil if disabled
+	UserID   uint64  `json:"user_id"`   // User who made the change
+	UserName string  `json:"user_name"` // User's display name
 }
 
 // MarshalJSON implements custom JSON marshaling for ServerMsg.
@@ -169,6 +171,6 @@ func NewUserCursorMsg(id uint64, data CursorData) *ServerMsg {
 }
 
 // NewOTPMsg creates an OTP server message.
-func NewOTPMsg(otp *string) *ServerMsg {
-	return &ServerMsg{OTP: &OTPMsg{OTP: otp}}
+func NewOTPMsg(otp *string, userID uint64, userName string) *ServerMsg {
+	return &ServerMsg{OTP: &OTPMsg{OTP: otp, UserID: userID, UserName: userName}}
 }

@@ -119,6 +119,14 @@ func (r *Kolabpad) UserCount() int {
 	return len(r.state.Users)
 }
 
+// HasUser checks if a user is currently connected to this document.
+func (r *Kolabpad) HasUser(userID uint64) bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	_, exists := r.state.Users[userID]
+	return exists
+}
+
 // LastEditTime returns the time of the last edit.
 func (r *Kolabpad) LastEditTime() time.Time {
 	timestamp := r.lastEditTime.Load()
@@ -333,7 +341,7 @@ func (r *Kolabpad) SetLanguage(lang string) {
 }
 
 // SetOTP updates the OTP in state and broadcasts to all connected clients.
-func (r *Kolabpad) SetOTP(otp *string) {
+func (r *Kolabpad) SetOTP(otp *string, userID uint64, userName string) {
 	// Update state
 	r.mu.Lock()
 	r.state.OTP = otp
@@ -342,8 +350,8 @@ func (r *Kolabpad) SetOTP(otp *string) {
 	// Mark as critical write (for persister debouncing)
 	r.lastCriticalWrite.Store(time.Now().Unix())
 
-	// Broadcast to all authenticated clients
-	r.broadcast(protocol.NewOTPMsg(otp))
+	// Broadcast to all authenticated clients with user info
+	r.broadcast(protocol.NewOTPMsg(otp, userID, userName))
 }
 
 // SetUserInfo updates a user's display information.

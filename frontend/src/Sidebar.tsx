@@ -29,19 +29,25 @@ import User from "./User";
 import languages from "./languages.json";
 import type { UserInfo } from "./kolabpad";
 
+type OTPBroadcast = {
+  otp: string | null;
+  userId: number;
+  userName: string;
+};
+
 export type SidebarProps = {
   documentId: string;
   connection: "connected" | "disconnected" | "desynchronized";
   darkMode: boolean;
   language: string;
-  currentUser: UserInfo;
+  currentUser: UserInfo & { id: number };
   users: Record<number, UserInfo>;
   onDarkModeChange: () => void;
   onLanguageChange: (language: string) => void;
   onLoadSample: () => void;
   onChangeName: (name: string) => void;
   onChangeColor: () => void;
-  otpFromServer: string | null | undefined;
+  otpBroadcast: OTPBroadcast | undefined;
 };
 
 function Sidebar({
@@ -56,14 +62,13 @@ function Sidebar({
   onLoadSample,
   onChangeName,
   onChangeColor,
-  otpFromServer,
+  otpBroadcast,
 }: SidebarProps) {
   const toast = useToast();
   const [otpEnabled, setOtpEnabled] = useState(false);
   const [otp, setOtp] = useState<string | null>(null);
   const [isToggling, setIsToggling] = useState(false);
   const [copied, setCopied] = useState(false);
-  const ignoreNextBroadcastRef = useRef(false);
 
   // Check if OTP is in the URL on component mount
   // Note: Component remounts completely when documentId changes (via key prop),
@@ -79,79 +84,33 @@ function Sidebar({
     }
   }, []); // Only runs on mount (component remounts when document changes)
 
-  // Sync OTP changes from server
-  // Note: Server does NOT send OTP during initial connection (sendInitial).
-  // It only broadcasts OTP changes when someone explicitly enables/disables it.
-  // Therefore, this effect should ONLY respond to explicit OTP broadcasts, never to null values.
+  // Sync OTP changes from server broadcasts
+  // All clients (including the one who initiated the change) update from broadcasts
   useEffect(() => {
-    // Skip if we initiated this change
-    if (ignoreNextBroadcastRef.current) {
-      logger.debug('[OTPBroadcast] Ignoring broadcast (we initiated this change)');
-      ignoreNextBroadcastRef.current = false;
+    // Skip if no broadcast received yet
+    if (otpBroadcast === undefined) {
+      logger.debug('[OTPBroadcast] No broadcast yet');
       return;
     }
 
-    // Skip if server hasn't sent any OTP broadcast yet (undefined means "no broadcast yet")
-    if (otpFromServer === undefined) {
-      logger.debug('[OTPBroadcast] No OTP broadcast from server yet, keeping URL state');
-      return;
-    }
+    logger.debug('[OTPBroadcast] Received OTP change:', {
+      otp: otpBroadcast.otp,
+      fromUser: otpBroadcast.userId,
+      userName: otpBroadcast.userName
+    });
 
-    logger.debug('[OTPBroadcast] Received OTP change from another user:', { otpFromServer, currentOtp: otp });
+    // Determine if this is my change
+    const isMyChange = otpBroadcast.userId === currentUser.id;
 
-    if (otpFromServer) {
-      // OTP enabled by another user
-      setOtp(otpFromServer);
+    // Update UI state (same for everyone)
+    if (otpBroadcast.otp) {
+      // OTP enabled
+      setOtp(otpBroadcast.otp);
       setOtpEnabled(true);
-      window.history.replaceState(null, "", `#${documentId}?otp=${otpFromServer}`);
+      window.history.replaceState(null, "", `#${documentId}?otp=${otpBroadcast.otp}`);
 
-      // Show toast only if this is different from our current state
-      if (otpFromServer !== otp) {
-        toast({
-          title: "OTP Updated",
-          description: "Document protection has been enabled by another user",
-          status: "info",
-          duration: UI.TOAST_INFO_DURATION,
-          isClosable: true,
-        });
-      }
-    } else if (!otpFromServer && otp) {
-      // OTP disabled by another user (server sent empty string or explicitly disabled)
-      setOtp(null);
-      setOtpEnabled(false);
-      window.history.replaceState(null, "", `#${documentId}`);
-      toast({
-        title: "OTP Removed",
-        description: "Document protection has been disabled by another user",
-        status: "info",
-        duration: UI.TOAST_INFO_DURATION,
-        isClosable: true,
-      });
-    }
-  }, [otpFromServer, documentId, toast, otp]);
-
-  // For sharing the document by link to others.
-  const documentUrl = otp
-    ? `${window.location.origin}/#${documentId}?otp=${otp}`
-    : `${window.location.origin}/#${documentId}`;
-
-  async function handleOtpToggle(checked: boolean) {
-    setIsToggling(true);
-    ignoreNextBroadcastRef.current = true;
-    try {
-      if (checked) {
-        // Enable OTP protection
-        const response = await fetch(`/api/document/${documentId}/protect`, {
-          method: "POST",
-        });
-        if (!response.ok) {
-          throw new Error("Failed to enable OTP protection");
-        }
-        const data = await response.json();
-        setOtp(data.otp);
-        setOtpEnabled(true);
-        // Update browser URL to include OTP parameter
-        window.history.replaceState(null, "", `#${documentId}?otp=${data.otp}`);
+      // Show appropriate toast
+      if (isMyChange) {
         toast({
           title: "OTP Protection Enabled",
           description: "Document is now protected with a secure token",
@@ -160,17 +119,22 @@ function Sidebar({
           isClosable: true,
         });
       } else {
-        // Disable OTP protection
-        const response = await fetch(`/api/document/${documentId}/protect`, {
-          method: "DELETE",
+        toast({
+          title: "OTP Updated",
+          description: "Document protection has been enabled by another user",
+          status: "info",
+          duration: UI.TOAST_INFO_DURATION,
+          isClosable: true,
         });
-        if (!response.ok) {
-          throw new Error("Failed to disable OTP protection");
-        }
-        setOtp(null);
-        setOtpEnabled(false);
-        // Update browser URL to remove OTP parameter
-        window.history.replaceState(null, "", `#${documentId}`);
+      }
+    } else {
+      // OTP disabled
+      setOtp(null);
+      setOtpEnabled(false);
+      window.history.replaceState(null, "", `#${documentId}`);
+
+      // Show appropriate toast
+      if (isMyChange) {
         toast({
           title: "OTP Protection Disabled",
           description: "Document is now accessible without a token",
@@ -178,6 +142,55 @@ function Sidebar({
           duration: UI.TOAST_INFO_DURATION,
           isClosable: true,
         });
+      } else {
+        toast({
+          title: "OTP Removed",
+          description: "Document protection has been disabled by another user",
+          status: "info",
+          duration: UI.TOAST_INFO_DURATION,
+          isClosable: true,
+        });
+      }
+    }
+  }, [otpBroadcast, currentUser.id, documentId, toast]);
+
+  // For sharing the document by link to others.
+  const documentUrl = otp
+    ? `${window.location.origin}/#${documentId}?otp=${otp}`
+    : `${window.location.origin}/#${documentId}`;
+
+  async function handleOtpToggle(checked: boolean) {
+    setIsToggling(true);
+    try {
+      if (checked) {
+        // Enable OTP protection
+        const response = await fetch(`/api/document/${documentId}/protect`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            user_id: currentUser.id,
+            user_name: currentUser.name,
+          }),
+        });
+        if (!response.ok) {
+          throw new Error("Failed to enable OTP protection");
+        }
+        // Don't update local state - wait for broadcast
+      } else {
+        // Disable OTP protection - MUST provide current OTP for security
+        const response = await fetch(`/api/document/${documentId}/protect`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            user_id: currentUser.id,
+            user_name: currentUser.name,
+            otp: otp, // Current OTP required
+          }),
+        });
+        if (!response.ok) {
+          throw new Error("Failed to disable OTP protection");
+        }
+        // Don't update local state - wait for broadcast
       }
     } catch (error) {
       toast({
@@ -189,7 +202,6 @@ function Sidebar({
       });
       // Revert the toggle state on error
       setOtpEnabled(!checked);
-      ignoreNextBroadcastRef.current = false;
     } finally {
       setIsToggling(false);
     }

@@ -65,9 +65,10 @@ function DocumentEditor() {
     documentId,
     connection,
     users,
+    myUserId,
     language,
     setLanguage,
-    otpFromServer,
+    otpBroadcast,
     editor,
     setEditor,
     isAuthBlocked,
@@ -130,14 +131,14 @@ function DocumentEditor() {
             connection={connection}
             darkMode={darkMode}
             language={language}
-            currentUser={{ name, hue }}
+            currentUser={{ id: myUserId, name, hue }}
             users={users}
             onDarkModeChange={() => setDarkMode(!darkMode)}
             onLanguageChange={setLanguage}
             onLoadSample={() => handleLoadSample(false)}
             onChangeName={(name) => name.length > 0 && setName(name)}
             onChangeColor={() => setHue(generateHue())}
-            otpFromServer={otpFromServer}
+            otpBroadcast={otpBroadcast}
           />
         )}
         <AuthBlockedDialog isOpen={isAuthBlocked} />

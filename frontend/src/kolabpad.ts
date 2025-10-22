@@ -27,10 +27,11 @@ export type KolabpadOptions = {
   readonly onConnected?: () => void;
   readonly onDisconnected?: () => void;
   readonly onDesynchronized?: () => void;
+  readonly onIdentity?: (userId: number) => void;
   readonly onChangeLanguage?: (language: string) => void;
   readonly onChangeUsers?: (users: Record<number, UserInfo>) => void;
   readonly onAuthError?: () => void;
-  readonly onChangeOTP?: (otp: string | null) => void;
+  readonly onChangeOTP?: (otp: string | null, userId: number, userName: string) => void;
   readonly reconnectInterval?: number;
 };
 
@@ -151,6 +152,11 @@ class Kolabpad {
     this.sendInfo();
   }
 
+  /** Get the current user's ID assigned by the server. Returns -1 if not connected yet. */
+  getUserId(): number {
+    return this.me;
+  }
+
   /**
    * Attempts a WebSocket connection.
    *
@@ -217,6 +223,7 @@ class Kolabpad {
     if (msg.Identity !== undefined) {
       this.me = msg.Identity;
       logger.debug("[Identity] Assigned ID:", this.me);
+      this.options.onIdentity?.(this.me);
     } else if (msg.History !== undefined) {
       const { start, operations } = msg.History;
       logger.debug(`[History] Received ${operations.length} operations from revision ${start}`);
@@ -264,9 +271,9 @@ class Kolabpad {
         this.updateCursors();
       }
     } else if (msg.OTP !== undefined) {
-      const { otp } = msg.OTP;
-      logger.debug(`[OTP] Changed to: ${otp || 'disabled'}`);
-      this.options.onChangeOTP?.(otp);
+      const { otp, user_id, user_name } = msg.OTP;
+      logger.debug(`[OTP] Changed to: ${otp || 'disabled'} by user ${user_id} (${user_name})`);
+      this.options.onChangeOTP?.(otp, user_id, user_name);
     }
   }
 

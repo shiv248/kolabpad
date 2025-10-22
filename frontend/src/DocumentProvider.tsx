@@ -5,18 +5,26 @@ import Kolabpad, { UserInfo } from "./kolabpad";
 import languages from "./languages.json";
 import { useSession } from "./SessionProvider";
 import { getOtpFromUrl } from "./utils/url";
+import { logger } from "./logger";
 
 /**
  * Document-scoped state that resets when switching documents.
  * The provider remounts when documentId changes (via key prop).
  */
+interface OTPBroadcast {
+  otp: string | null;
+  userId: number;
+  userName: string;
+}
+
 interface DocumentContextValue {
   documentId: string;
   connection: "connected" | "disconnected" | "desynchronized";
   users: Record<number, UserInfo>;
+  myUserId: number;
   language: string;
   setLanguage: (language: string) => void;
-  otpFromServer: string | null | undefined;
+  otpBroadcast: OTPBroadcast | undefined;
   editor: editor.IStandaloneCodeEditor | undefined;
   setEditor: (editor: editor.IStandaloneCodeEditor) => void;
   isAuthBlocked: boolean;
@@ -51,8 +59,9 @@ export function DocumentProvider({
   // Document-scoped state
   const [connection, setConnection] = useState<"connected" | "disconnected" | "desynchronized">("disconnected");
   const [users, setUsers] = useState<Record<number, UserInfo>>({});
+  const [myUserId, setMyUserId] = useState<number>(-1);
   const [language, setLanguage] = useState("plaintext");
-  const [otpFromServer, setOtpFromServer] = useState<string | null | undefined>(undefined);
+  const [otpBroadcast, setOtpBroadcast] = useState<OTPBroadcast | undefined>(undefined);
   const [editor, setEditor] = useState<editor.IStandaloneCodeEditor>();
   const [isAuthBlocked, setIsAuthBlocked] = useState(false);
 
@@ -69,6 +78,10 @@ export function DocumentProvider({
       editor,
       onConnected: () => setConnection("connected"),
       onDisconnected: () => setConnection("disconnected"),
+      onIdentity: (userId) => {
+        setMyUserId(userId);
+        logger.debug('[Identity] User ID set:', userId);
+      },
       onDesynchronized: () => {
         setConnection("desynchronized");
         toast({
@@ -106,8 +119,8 @@ export function DocumentProvider({
         }
       },
       onChangeUsers: setUsers,
-      onChangeOTP: (otp) => {
-        setOtpFromServer(otp);
+      onChangeOTP: (otp, userId, userName) => {
+        setOtpBroadcast({ otp, userId, userName });
       },
     });
 
@@ -147,9 +160,10 @@ export function DocumentProvider({
         documentId,
         connection,
         users,
+        myUserId,
         language,
         setLanguage: handleSetLanguage,
-        otpFromServer,
+        otpBroadcast,
         editor,
         setEditor,
         isAuthBlocked,

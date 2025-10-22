@@ -306,6 +306,31 @@ func (s *Server) handleDocument(w http.ResponseWriter, r *http.Request) {
 
 // handleProtectDocument enables OTP protection for a document.
 func (s *Server) handleProtectDocument(w http.ResponseWriter, r *http.Request, docID string) {
+	// Parse request body to get user info
+	var reqBody struct {
+		UserID   uint64 `json:"user_id"`
+		UserName string `json:"user_name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Validate user is connected to the document
+	if val, ok := s.state.documents.Load(docID); ok {
+		doc := val.(*Document)
+		if !doc.Kolabpad.HasUser(reqBody.UserID) {
+			logger.Info("User %d (%s) attempted to protect document %s without being connected", reqBody.UserID, reqBody.UserName, docID)
+			http.Error(w, "Forbidden: not connected to document", http.StatusForbidden)
+			return
+		}
+	} else {
+		// Document not in memory - user can't be connected
+		logger.Info("User %d (%s) attempted to protect non-existent document %s", reqBody.UserID, reqBody.UserName, docID)
+		http.Error(w, "Forbidden: not connected to document", http.StatusForbidden)
+		return
+	}
+
 	// Generate OTP
 	otp := GenerateOTP()
 
@@ -340,12 +365,12 @@ func (s *Server) handleProtectDocument(w http.ResponseWriter, r *http.Request, d
 		}
 	}
 
-	logger.Info("Document %s protected with OTP (DB write successful)", docID)
+	logger.Info("Document %s protected with OTP by user %d (%s) (DB write successful)", docID, reqBody.UserID, reqBody.UserName)
 
 	// DB write successful - NOW update memory and broadcast
 	if val, ok := s.state.documents.Load(docID); ok {
 		doc := val.(*Document)
-		doc.Kolabpad.SetOTP(&otp) // Updates memory + broadcasts to clients
+		doc.Kolabpad.SetOTP(&otp, reqBody.UserID, reqBody.UserName) // Updates memory + broadcasts to clients
 	}
 
 	// Return OTP to client
@@ -357,6 +382,46 @@ func (s *Server) handleProtectDocument(w http.ResponseWriter, r *http.Request, d
 
 // handleUnprotectDocument disables OTP protection for a document.
 func (s *Server) handleUnprotectDocument(w http.ResponseWriter, r *http.Request, docID string) {
+	// Parse request body to get user info and current OTP
+	var reqBody struct {
+		UserID   uint64 `json:"user_id"`
+		UserName string `json:"user_name"`
+		OTP      string `json:"otp"` // Current OTP required for security
+	}
+	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Validate user is connected to the document
+	var doc *Document
+	if val, ok := s.state.documents.Load(docID); ok {
+		doc = val.(*Document)
+		if !doc.Kolabpad.HasUser(reqBody.UserID) {
+			logger.Info("User %d (%s) attempted to unprotect document %s without being connected", reqBody.UserID, reqBody.UserName, docID)
+			http.Error(w, "Forbidden: not connected to document", http.StatusForbidden)
+			return
+		}
+	} else {
+		// Document not in memory - user can't be connected
+		logger.Info("User %d (%s) attempted to unprotect non-existent document %s", reqBody.UserID, reqBody.UserName, docID)
+		http.Error(w, "Forbidden: not connected to document", http.StatusForbidden)
+		return
+	}
+
+	// CRITICAL SECURITY: Validate the provided OTP matches the current OTP
+	// This prevents anyone who just knows the document ID from disabling protection
+	currentOTP := doc.Kolabpad.GetOTP()
+	if currentOTP == nil {
+		http.Error(w, "document is not OTP-protected", http.StatusBadRequest)
+		return
+	}
+	if reqBody.OTP != *currentOTP {
+		logger.Info("User %d (%s) attempted to unprotect document %s with invalid OTP", reqBody.UserID, reqBody.UserName, docID)
+		http.Error(w, "Forbidden: invalid OTP", http.StatusForbidden)
+		return
+	}
+
 	// CRITICAL: Write to DB FIRST (atomicity - prevents memory/DB desync)
 	// Remove OTP by setting it to NULL
 	if err := s.state.db.UpdateOTP(docID, nil); err != nil {
@@ -365,13 +430,10 @@ func (s *Server) handleUnprotectDocument(w http.ResponseWriter, r *http.Request,
 		return // DB write failed - do NOT update memory
 	}
 
-	logger.Info("Document %s unprotected (OTP removed, DB write successful)", docID)
+	logger.Info("Document %s unprotected by user %d (%s) (OTP removed, DB write successful)", docID, reqBody.UserID, reqBody.UserName)
 
 	// DB write successful - NOW update memory and broadcast
-	if val, ok := s.state.documents.Load(docID); ok {
-		doc := val.(*Document)
-		doc.Kolabpad.SetOTP(nil) // Updates memory + broadcasts to clients
-	}
+	doc.Kolabpad.SetOTP(nil, reqBody.UserID, reqBody.UserName) // Updates memory + broadcasts to clients
 
 	w.WriteHeader(http.StatusNoContent)
 }
