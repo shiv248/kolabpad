@@ -7,6 +7,7 @@ import { useSession } from "./SessionProvider";
 import { getOtpFromUrl } from "./utils/url";
 import { logger } from "./logger";
 import { USER } from "./constants";
+import { generateHue, hasHueCollision } from "./utils/color";
 
 /**
  * Document-scoped state that resets when switching documents.
@@ -62,7 +63,7 @@ export function DocumentProvider({
   children: ReactNode;
 }) {
   const toast = useToast();
-  const { name, hue } = useSession();
+  const { name, hue, setHue } = useSession();
 
   // Document-scoped state
   const [connection, setConnection] = useState<"connected" | "disconnected" | "desynchronized">("disconnected");
@@ -165,6 +166,30 @@ export function DocumentProvider({
       });
     }
   }, [languageBroadcast, myUserId, toast]);
+
+  // Collision detection - auto-adjust hue when joining if there's a collision
+  const collisionCheckDoneRef = useRef(false);
+  useEffect(() => {
+    // Only check once when initially connected
+    if (connection !== "connected" || myUserId === -1 || collisionCheckDoneRef.current) {
+      return;
+    }
+
+    // Extract hues from other users (excluding self)
+    const existingHues = Object.entries(users)
+      .filter(([id]) => Number(id) !== myUserId)
+      .map(([, user]) => user.hue);
+
+    // Check if current hue collides with existing users
+    if (existingHues.length > 0 && hasHueCollision(hue, existingHues)) {
+      const newHue = generateHue(existingHues);
+      logger.debug('[Color] Collision detected on join, changing hue from %d to %d', hue, newHue);
+      setHue(newHue);
+    }
+
+    // Mark collision check as done for this document session
+    collisionCheckDoneRef.current = true;
+  }, [connection, myUserId, users, hue, setHue]);
 
   // Helper to send language change - just sends message, no local updates
   const sendLanguageChange = (newLanguage: string) => {

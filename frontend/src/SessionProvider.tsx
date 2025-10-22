@@ -1,13 +1,10 @@
 import { createContext, useContext, ReactNode } from "react";
 import useLocalStorageState from "use-local-storage-state";
+import { generateHue } from "./utils/color";
 import animals from "./animals.json";
 
 function generateName() {
   return "Anonymous " + animals[Math.floor(Math.random() * animals.length)];
-}
-
-function generateHue() {
-  return Math.floor(Math.random() * 360);
 }
 
 /**

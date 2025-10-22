@@ -14,6 +14,7 @@ import { colors, layout } from "./theme";
 import useHash from "./useHash";
 import { SessionProvider, useSession } from "./SessionProvider";
 import { DocumentProvider, useDocument } from "./DocumentProvider";
+import { generateHue } from "./utils/color";
 
 /**
  * Comprehensively resets Monaco editor state when switching documents.
@@ -49,10 +50,6 @@ function resetEditorState(editor: editor.IStandaloneCodeEditor) {
     endLineNumber: 1,
     endColumn: 1,
   });
-}
-
-function generateHue() {
-  return Math.floor(Math.random() * 360);
 }
 
 /**
@@ -137,7 +134,7 @@ function DocumentEditor() {
             onLanguageChange={sendLanguageChange}
             onLoadSample={() => handleLoadSample(false)}
             onChangeName={(name) => name.length > 0 && setName(name)}
-            onChangeColor={() => setHue(generateHue())}
+            onChangeColor={() => setHue(generateHue(Object.values(users).map(u => u.hue)))}
             otpBroadcast={otpBroadcast}
           />
         )}
