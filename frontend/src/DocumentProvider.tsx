@@ -16,7 +16,7 @@ interface DocumentContextValue {
   users: Record<number, UserInfo>;
   language: string;
   setLanguage: (language: string) => void;
-  otpFromServer: string | null;
+  otpFromServer: string | null | undefined;
   editor: editor.IStandaloneCodeEditor | undefined;
   setEditor: (editor: editor.IStandaloneCodeEditor) => void;
   isAuthBlocked: boolean;
@@ -52,7 +52,7 @@ export function DocumentProvider({
   const [connection, setConnection] = useState<"connected" | "disconnected" | "desynchronized">("disconnected");
   const [users, setUsers] = useState<Record<number, UserInfo>>({});
   const [language, setLanguage] = useState("plaintext");
-  const [otpFromServer, setOtpFromServer] = useState<string | null>(null);
+  const [otpFromServer, setOtpFromServer] = useState<string | null | undefined>(undefined);
   const [editor, setEditor] = useState<editor.IStandaloneCodeEditor>();
   const [isAuthBlocked, setIsAuthBlocked] = useState(false);
 

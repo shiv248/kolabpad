@@ -41,7 +41,7 @@ export type SidebarProps = {
   onLoadSample: () => void;
   onChangeName: (name: string) => void;
   onChangeColor: () => void;
-  otpFromServer: string | null;
+  otpFromServer: string | null | undefined;
 };
 
 function Sidebar({
@@ -91,8 +91,8 @@ function Sidebar({
       return;
     }
 
-    // Skip if server hasn't sent any OTP broadcast yet (null means "no broadcast", not "no OTP")
-    if (otpFromServer === null) {
+    // Skip if server hasn't sent any OTP broadcast yet (undefined means "no broadcast yet")
+    if (otpFromServer === undefined) {
       logger.debug('[OTPBroadcast] No OTP broadcast from server yet, keeping URL state');
       return;
     }
