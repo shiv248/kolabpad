@@ -44,12 +44,12 @@ type EditMsg struct {
 // ServerMsg represents messages sent from server to client.
 // Only one field should be set per message (tagged union pattern).
 type ServerMsg struct {
-	Identity   *uint64       `json:"Identity,omitempty"`
-	History    *HistoryMsg   `json:"History,omitempty"`
-	Language   *string       `json:"Language,omitempty"`
-	UserInfo   *UserInfoMsg  `json:"UserInfo,omitempty"`
+	Identity   *uint64        `json:"Identity,omitempty"`
+	History    *HistoryMsg    `json:"History,omitempty"`
+	Language   *LanguageMsg   `json:"Language,omitempty"`
+	UserInfo   *UserInfoMsg   `json:"UserInfo,omitempty"`
 	UserCursor *UserCursorMsg `json:"UserCursor,omitempty"`
-	OTP        *OTPMsg       `json:"OTP,omitempty"`
+	OTP        *OTPMsg        `json:"OTP,omitempty"`
 }
 
 // HistoryMsg sends a batch of operations to the client.
@@ -70,6 +70,13 @@ type UserCursorMsg struct {
 	Data CursorData `json:"data"` // Cursor positions
 }
 
+// LanguageMsg broadcasts language changes to all clients.
+type LanguageMsg struct {
+	Language string `json:"language"` // New language
+	UserID   uint64 `json:"user_id"`  // User who made the change
+	UserName string `json:"user_name"` // User's display name
+}
+
 // OTPMsg broadcasts OTP changes to authenticated clients.
 type OTPMsg struct {
 	OTP      *string `json:"otp"`       // OTP token, or nil if disabled
@@ -88,7 +95,7 @@ func (m *ServerMsg) MarshalJSON() ([]byte, error) {
 	} else if m.History != nil {
 		result["History"] = m.History
 	} else if m.Language != nil {
-		result["Language"] = *m.Language
+		result["Language"] = m.Language
 	} else if m.UserInfo != nil {
 		result["UserInfo"] = m.UserInfo
 	} else if m.UserCursor != nil {
@@ -156,8 +163,8 @@ func NewHistoryMsg(start int, ops []UserOperation) *ServerMsg {
 }
 
 // NewLanguageMsg creates a Language server message.
-func NewLanguageMsg(lang string) *ServerMsg {
-	return &ServerMsg{Language: &lang}
+func NewLanguageMsg(lang string, userID uint64, userName string) *ServerMsg {
+	return &ServerMsg{Language: &LanguageMsg{Language: lang, UserID: userID, UserName: userName}}
 }
 
 // NewUserInfoMsg creates a UserInfo server message.

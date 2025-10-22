@@ -6,6 +6,7 @@ import languages from "./languages.json";
 import { useSession } from "./SessionProvider";
 import { getOtpFromUrl } from "./utils/url";
 import { logger } from "./logger";
+import { USER } from "./constants";
 
 /**
  * Document-scoped state that resets when switching documents.
@@ -17,13 +18,20 @@ interface OTPBroadcast {
   userName: string;
 }
 
+interface LanguageBroadcast {
+  language: string;
+  userId: number;
+  userName: string;
+}
+
 interface DocumentContextValue {
   documentId: string;
   connection: "connected" | "disconnected" | "desynchronized";
   users: Record<number, UserInfo>;
   myUserId: number;
   language: string;
-  setLanguage: (language: string) => void;
+  sendLanguageChange: (language: string) => void;
+  languageBroadcast: LanguageBroadcast | undefined;
   otpBroadcast: OTPBroadcast | undefined;
   editor: editor.IStandaloneCodeEditor | undefined;
   setEditor: (editor: editor.IStandaloneCodeEditor) => void;
@@ -61,13 +69,13 @@ export function DocumentProvider({
   const [users, setUsers] = useState<Record<number, UserInfo>>({});
   const [myUserId, setMyUserId] = useState<number>(-1);
   const [language, setLanguage] = useState("plaintext");
+  const [languageBroadcast, setLanguageBroadcast] = useState<LanguageBroadcast | undefined>(undefined);
   const [otpBroadcast, setOtpBroadcast] = useState<OTPBroadcast | undefined>(undefined);
   const [editor, setEditor] = useState<editor.IStandaloneCodeEditor>();
   const [isAuthBlocked, setIsAuthBlocked] = useState(false);
 
   const kolabpad = useRef<Kolabpad>();
   const authErrorShownRef = useRef(false);
-  const ignoreLangBroadcastRef = useRef(false); // Track if we initiated the language change
 
   // Initialize Kolabpad instance when editor is ready
   useEffect(() => {
@@ -98,24 +106,9 @@ export function DocumentProvider({
           setIsAuthBlocked(true);
         }
       },
-      onChangeLanguage: (language) => {
+      onChangeLanguage: (language, userId, userName) => {
         if (languages.includes(language)) {
-          // If we initiated this change, ignore the broadcast (we already showed our toast)
-          if (ignoreLangBroadcastRef.current) {
-            ignoreLangBroadcastRef.current = false;
-            setLanguage(language);
-            return;
-          }
-
-          // Another user changed the language - show notification
-          setLanguage(language);
-          toast({
-            title: "Language updated",
-            description: `Another user changed the language to ${language}.`,
-            status: "info",
-            duration: 2000,
-            isClosable: true,
-          });
+          setLanguageBroadcast({ language, userId, userName });
         }
       },
       onChangeUsers: setUsers,
@@ -137,21 +130,45 @@ export function DocumentProvider({
     }
   }, [connection, name, hue]);
 
-  // Helper to set language and broadcast to other users
-  const handleSetLanguage = (newLanguage: string) => {
-    setLanguage(newLanguage);
-    if (kolabpad.current?.setLanguage(newLanguage)) {
-      // Mark that we initiated this change to ignore the broadcast echo
-      ignoreLangBroadcastRef.current = true;
+  // Language broadcast handler - all clients update from broadcasts
+  useEffect(() => {
+    if (languageBroadcast === undefined) return;
 
+    const isMyChange = languageBroadcast.userId === myUserId;
+    const isInitialState = languageBroadcast.userId === USER.SYSTEM_USER_ID;
+
+    // Update language state
+    setLanguage(languageBroadcast.language);
+
+    // Show appropriate toast (skip for initial state)
+    if (isInitialState) {
+      logger.debug('[Language] Initial state received, no toast');
+    } else if (isMyChange) {
       toast({
         title: "Language updated",
-        description: `All users are now editing in ${newLanguage}.`,
+        description: `All users are now editing in ${languageBroadcast.language}.`,
+        status: "info",
+        duration: 2000,
+        isClosable: true,
+      });
+    } else {
+      toast({
+        title: "Language updated",
+        description: (
+          <>
+            Language changed to {languageBroadcast.language} by <i>{languageBroadcast.userName}</i>
+          </>
+        ),
         status: "info",
         duration: 2000,
         isClosable: true,
       });
     }
+  }, [languageBroadcast, myUserId, toast]);
+
+  // Helper to send language change - just sends message, no local updates
+  const sendLanguageChange = (newLanguage: string) => {
+    kolabpad.current?.setLanguage(newLanguage);
   };
 
   return (
@@ -162,7 +179,8 @@ export function DocumentProvider({
         users,
         myUserId,
         language,
-        setLanguage: handleSetLanguage,
+        sendLanguageChange,
+        languageBroadcast,
         otpBroadcast,
         editor,
         setEditor,

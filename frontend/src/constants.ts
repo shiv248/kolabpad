@@ -52,4 +52,7 @@ export const DOCUMENT = {
 export const USER = {
   /** Maximum length for user display names */
   MAX_NAME_LENGTH: 25,
+
+  /** System user ID (max uint64) used for system-generated operations and initial state */
+  SYSTEM_USER_ID: 18446744073709551615,
 } as const;

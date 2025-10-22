@@ -67,7 +67,7 @@ function DocumentEditor() {
     users,
     myUserId,
     language,
-    setLanguage,
+    sendLanguageChange,
     otpBroadcast,
     editor,
     setEditor,
@@ -101,7 +101,7 @@ function DocumentEditor() {
       );
       editor.setPosition({ column: 0, lineNumber: 0 });
       if (language !== "go") {
-        setLanguage("go");
+        sendLanguageChange("go");
       }
     }
   }
@@ -134,7 +134,7 @@ function DocumentEditor() {
             currentUser={{ id: myUserId, name, hue }}
             users={users}
             onDarkModeChange={() => setDarkMode(!darkMode)}
-            onLanguageChange={setLanguage}
+            onLanguageChange={sendLanguageChange}
             onLoadSample={() => handleLoadSample(false)}
             onChangeName={(name) => name.length > 0 && setName(name)}
             onChangeColor={() => setHue(generateHue())}

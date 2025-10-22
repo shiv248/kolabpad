@@ -28,7 +28,7 @@ export type KolabpadOptions = {
   readonly onDisconnected?: () => void;
   readonly onDesynchronized?: () => void;
   readonly onIdentity?: (userId: number) => void;
-  readonly onChangeLanguage?: (language: string) => void;
+  readonly onChangeLanguage?: (language: string, userId: number, userName: string) => void;
   readonly onChangeUsers?: (users: Record<number, UserInfo>) => void;
   readonly onAuthError?: () => void;
   readonly onChangeOTP?: (otp: string | null, userId: number, userName: string) => void;
@@ -246,8 +246,9 @@ class Kolabpad {
         }
       }
     } else if (msg.Language !== undefined) {
-      logger.debug(`[Language] Changed to: ${msg.Language}`);
-      this.options.onChangeLanguage?.(msg.Language);
+      const { language, user_id, user_name } = msg.Language;
+      logger.debug(`[Language] Changed to: ${language} by user ${user_id} (${user_name})`);
+      this.options.onChangeLanguage?.(language, user_id, user_name);
     } else if (msg.UserInfo !== undefined) {
       const { id, info } = msg.UserInfo;
       if (id !== this.me) {
@@ -609,7 +610,11 @@ type ServerMsg = {
     start: number;
     operations: UserOperation[];
   };
-  Language?: string;
+  Language?: {
+    language: string;
+    user_id: number;
+    user_name: string;
+  };
   UserInfo?: {
     id: number;
     info: UserInfo | null;
@@ -620,6 +625,8 @@ type ServerMsg = {
   };
   OTP?: {
     otp: string | null;
+    user_id: number;
+    user_name: string;
   };
 };
 

@@ -157,10 +157,10 @@ func (c *Connection) sendInitial() (int, error) {
 		}
 	}
 
-	// Send language
+	// Send language (with system user ID for initial state)
 	if lang != nil {
 		logger.Debug("User %d sending Language: %s", c.userID, *lang)
-		if err := c.send(protocol.NewLanguageMsg(*lang)); err != nil {
+		if err := c.send(protocol.NewLanguageMsg(*lang, protocol.SystemUserID, "System")); err != nil {
 			return 0, err
 		}
 	}
@@ -210,8 +210,9 @@ func (c *Connection) handleMessage(msg *protocol.ClientMsg) error {
 	}
 
 	if msg.SetLanguage != nil {
-		logger.Debug("User %d setting Language: %s", c.userID, *msg.SetLanguage)
-		c.kolabpad.SetLanguage(*msg.SetLanguage)
+		userName := c.getUserName()
+		logger.Debug("User %d (%s) setting Language: %s", c.userID, userName, *msg.SetLanguage)
+		c.kolabpad.SetLanguage(*msg.SetLanguage, c.userID, userName)
 		return nil
 	}
 
@@ -283,4 +284,16 @@ func (c *Connection) cleanup() {
 	logger.Info("User %d disconnected", c.userID)
 	c.kolabpad.RemoveUser(c.userID)
 	c.cancel()
+}
+
+// getUserName returns the user's display name from the kolabpad state.
+// Returns empty string if user info is not found.
+func (c *Connection) getUserName() string {
+	c.kolabpad.mu.RLock()
+	defer c.kolabpad.mu.RUnlock()
+
+	if userInfo, exists := c.kolabpad.state.Users[c.userID]; exists {
+		return userInfo.Name
+	}
+	return ""
 }

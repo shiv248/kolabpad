@@ -70,7 +70,7 @@ func FromPersistedDocument(text string, language *string, otp *string, maxDocume
 		r.state.Language = language
 		r.state.Operations = []protocol.UserOperation{
 			{
-				ID:        ^uint64(0), // u64::MAX - system operation
+				ID:        protocol.SystemUserID, // System operation
 				Operation: op,
 			},
 		}
@@ -328,7 +328,7 @@ func (r *Kolabpad) ApplyEdit(userID uint64, revision int, operation *ot.Operatio
 }
 
 // SetLanguage sets the document's syntax highlighting language.
-func (r *Kolabpad) SetLanguage(lang string) {
+func (r *Kolabpad) SetLanguage(lang string, userID uint64, userName string) {
 	r.mu.Lock()
 	r.state.Language = &lang
 	r.mu.Unlock()
@@ -336,8 +336,8 @@ func (r *Kolabpad) SetLanguage(lang string) {
 	// Track edit time for idle detection
 	r.lastEditTime.Store(time.Now().Unix())
 
-	// Broadcast to all clients
-	r.broadcast(protocol.NewLanguageMsg(lang))
+	// Broadcast to all clients with user info
+	r.broadcast(protocol.NewLanguageMsg(lang, userID, userName))
 }
 
 // SetOTP updates the OTP in state and broadcasts to all connected clients.
