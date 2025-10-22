@@ -5,16 +5,16 @@ import * as monaco from "monaco-editor/esm/vs/editor/editor.api";
 import { useState, useEffect } from "react";
 import { VscChevronRight, VscFolderOpened, VscGist } from "react-icons/vsc";
 
-import kolabpadRaw from "../../pkg/server/kolabpad.go?raw";
-import AuthBlockedDialog from "./AuthBlockedDialog";
-import Footer from "./Footer";
-import ReadCodeConfirm from "./ReadCodeConfirm";
-import Sidebar from "./Sidebar";
-import { colors, layout } from "./theme";
-import useHash from "./useHash";
-import { SessionProvider, useSession } from "./SessionProvider";
-import { DocumentProvider, useDocument } from "./DocumentProvider";
-import { generateHue } from "./utils/color";
+import kolabpadRaw from "../../../pkg/server/kolabpad.go?raw";
+import AuthBlockedDialog from "./shared/AuthBlockedDialog";
+import Footer from "./shared/Footer";
+import ReadCodeConfirm from "./shared/ReadCodeConfirm";
+import Sidebar from "./sidebar/Sidebar";
+import { colors, layout } from "../theme";
+import { useHash } from "../hooks";
+import { SessionProvider, useSession } from "../contexts/SessionProvider";
+import { DocumentProvider, useDocument } from "../contexts/DocumentProvider";
+import { generateHue } from "../utils";
 
 /**
  * Comprehensively resets Monaco editor state when switching documents.

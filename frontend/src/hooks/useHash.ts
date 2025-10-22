@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { DOCUMENT } from "./constants";
+import { DOCUMENT } from "../constants";
 
 function getHash() {
   const fullHash = window.location.hash.slice(1);
@@ -20,7 +20,7 @@ function getHash() {
   return fullHash.split('?')[0];
 }
 
-function useHash() {
+export function useHash() {
   const [hash, setHash] = useState(getHash);
 
   useEffect(() => {
@@ -31,5 +31,3 @@ function useHash() {
 
   return hash;
 }
-
-export default useHash;

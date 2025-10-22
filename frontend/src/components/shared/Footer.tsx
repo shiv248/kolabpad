@@ -1,7 +1,7 @@
 import { Flex, Icon, Text } from "@chakra-ui/react";
 import { useState } from "react";
 import { VscFileCode } from "react-icons/vsc";
-import { colors, layout } from "./theme";
+import { colors, layout } from "../../theme";
 
 const version =
   import.meta.env.VITE_SHA && import.meta.env.VITE_SHA !== "undefined"

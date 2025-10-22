@@ -1,29 +1,19 @@
 import { createContext, useContext, ReactNode, useState, useRef, useEffect } from "react";
 import { editor } from "monaco-editor/esm/vs/editor/editor.api";
 import { useToast } from "@chakra-ui/react";
-import Kolabpad, { UserInfo } from "./kolabpad";
-import languages from "./languages.json";
+import Kolabpad from "../services/kolabpad";
+import languages from "../languages.json";
 import { useSession } from "./SessionProvider";
-import { getOtpFromUrl } from "./utils/url";
-import { logger } from "./logger";
-import { USER } from "./constants";
-import { generateHue, hasHueCollision } from "./utils/color";
+import { getOtpFromUrl } from "../utils/url";
+import { logger } from "../logger";
+import { useLanguageSync } from "../hooks/useLanguageSync";
+import { useColorCollision } from "../hooks/useColorCollision";
+import type { UserInfo, OTPBroadcast, LanguageBroadcast } from "../types";
 
 /**
  * Document-scoped state that resets when switching documents.
  * The provider remounts when documentId changes (via key prop).
  */
-interface OTPBroadcast {
-  otp: string | null;
-  userId: number;
-  userName: string;
-}
-
-interface LanguageBroadcast {
-  language: string;
-  userId: number;
-  userName: string;
-}
 
 interface DocumentContextValue {
   documentId: string;
@@ -131,65 +121,20 @@ export function DocumentProvider({
     }
   }, [connection, name, hue]);
 
-  // Language broadcast handler - all clients update from broadcasts
-  useEffect(() => {
-    if (languageBroadcast === undefined) return;
+  // Use custom hooks for broadcast handling and collision detection
+  useLanguageSync({
+    languageBroadcast,
+    myUserId,
+    onLanguageChange: setLanguage,
+  });
 
-    const isMyChange = languageBroadcast.userId === myUserId;
-    const isInitialState = languageBroadcast.userId === USER.SYSTEM_USER_ID;
-
-    // Update language state
-    setLanguage(languageBroadcast.language);
-
-    // Show appropriate toast (skip for initial state)
-    if (isInitialState) {
-      logger.debug('[Language] Initial state received, no toast');
-    } else if (isMyChange) {
-      toast({
-        title: "Language updated",
-        description: `All users are now editing in ${languageBroadcast.language}.`,
-        status: "info",
-        duration: 2000,
-        isClosable: true,
-      });
-    } else {
-      toast({
-        title: "Language updated",
-        description: (
-          <>
-            Language changed to {languageBroadcast.language} by <i>{languageBroadcast.userName}</i>
-          </>
-        ),
-        status: "info",
-        duration: 2000,
-        isClosable: true,
-      });
-    }
-  }, [languageBroadcast, myUserId, toast]);
-
-  // Collision detection - auto-adjust hue when joining if there's a collision
-  const collisionCheckDoneRef = useRef(false);
-  useEffect(() => {
-    // Only check once when initially connected
-    if (connection !== "connected" || myUserId === -1 || collisionCheckDoneRef.current) {
-      return;
-    }
-
-    // Extract hues from other users (excluding self)
-    const existingHues = Object.entries(users)
-      .filter(([id]) => Number(id) !== myUserId)
-      .map(([, user]) => user.hue);
-
-    // Check if current hue collides with existing users
-    if (existingHues.length > 0 && hasHueCollision(hue, existingHues)) {
-      const newHue = generateHue(existingHues);
-      logger.debug('[Color] Collision detected on join, changing hue from %d to %d', hue, newHue);
-      setHue(newHue);
-    }
-
-    // Mark collision check as done for this document session
-    collisionCheckDoneRef.current = true;
-  }, [connection, myUserId, users, hue, setHue]);
+  useColorCollision({
+    connection,
+    myUserId,
+    users,
+    currentHue: hue,
+    onHueChange: setHue,
+  });
 
   // Helper to send language change - just sends message, no local updates
   const sendLanguageChange = (newLanguage: string) => {

@@ -19,9 +19,9 @@ import { useRef, useState, useEffect } from "react";
 import { FaPalette } from "react-icons/fa";
 import { VscAccount } from "react-icons/vsc";
 
-import { USER } from "./constants";
-import { UserInfo } from "./kolabpad";
-import { colors, zIndex } from "./theme";
+import { USER } from "../../constants";
+import type { UserInfo } from "../../types";
+import { colors, zIndex } from "../../theme";
 
 type UserProps = {
   info: UserInfo;

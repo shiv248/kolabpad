@@ -5,10 +5,10 @@ import type {
   editor,
 } from "monaco-editor/esm/vs/editor/editor.api";
 
-import { WEBSOCKET } from "./constants";
-import { logger } from "./logger";
-import { zIndex } from "./theme";
-import type { IOpSeq } from "./types/opseq";
+import { WEBSOCKET } from "../constants";
+import { logger } from "../logger";
+import { zIndex } from "../theme";
+import type { IOpSeq, UserInfo, CursorData, ServerMsg } from "../types";
 
 // OpSeq is loaded from Go WASM (global variable set by cmd/ot-wasm)
 // Type definition in ./types/opseq.d.ts
@@ -35,11 +35,7 @@ export type KolabpadOptions = {
   readonly reconnectInterval?: number;
 };
 
-/** A user currently editing the document. */
-export type UserInfo = {
-  readonly name: string;
-  readonly hue: number;
-};
+// UserInfo type now imported from ../types
 
 /** Browser client for Kolabpad. */
 class Kolabpad {
@@ -594,41 +590,8 @@ class Kolabpad {
   }
 }
 
-type UserOperation = {
-  id: number;
-  operation: any;
-};
-
-type CursorData = {
-  cursors: number[];
-  selections: [number, number][];
-};
-
-type ServerMsg = {
-  Identity?: number;
-  History?: {
-    start: number;
-    operations: UserOperation[];
-  };
-  Language?: {
-    language: string;
-    user_id: number;
-    user_name: string;
-  };
-  UserInfo?: {
-    id: number;
-    info: UserInfo | null;
-  };
-  UserCursor?: {
-    id: number;
-    data: CursorData;
-  };
-  OTP?: {
-    otp: string | null;
-    user_id: number;
-    user_name: string;
-  };
-};
+// Type definitions now imported from ../types
+// UserOperation, CursorData, ServerMsg are all centralized
 
 /** Returns the number of Unicode codepoints in a string. */
 function unicodeLength(str: string): number {
