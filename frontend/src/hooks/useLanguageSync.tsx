@@ -27,18 +27,31 @@ export function useLanguageSync({
   const toast = useToast();
 
   useEffect(() => {
-    if (languageBroadcast === undefined) return;
+    if (languageBroadcast === undefined) {
+      logger.debug('[LanguageBroadcast] No broadcast yet');
+      return;
+    }
 
     const isMyChange = languageBroadcast.userId === myUserId;
     const isInitialState = languageBroadcast.userId === USER.SYSTEM_USER_ID;
 
+    logger.debug('[LanguageBroadcast] Received language change:', {
+      language: languageBroadcast.language,
+      fromUser: languageBroadcast.userId,
+      userName: languageBroadcast.userName,
+      isMyChange,
+      isInitialState,
+    });
+
     // Update language state via callback
     onLanguageChange(languageBroadcast.language);
+    logger.info('[LanguageBroadcast] Language updated to:', languageBroadcast.language);
 
     // Show appropriate toast (skip for initial state)
     if (isInitialState) {
-      logger.debug('[Language] Initial state received, no toast');
+      logger.debug('[LanguageBroadcast] Initial state, skipping toast');
     } else if (isMyChange) {
+      logger.debug('[LanguageBroadcast] Showing toast for own change');
       toast({
         title: 'Language updated',
         description: `All users are now editing in ${languageBroadcast.language}.`,
@@ -47,6 +60,7 @@ export function useLanguageSync({
         isClosable: true,
       });
     } else {
+      logger.debug('[LanguageBroadcast] Showing toast for remote change by:', languageBroadcast.userName);
       toast({
         title: 'Language updated',
         description: (

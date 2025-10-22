@@ -11,23 +11,70 @@ import { logger } from '../logger';
 import { UI } from '../constants';
 import type { OTPBroadcast } from '../types';
 
+/**
+ * Options for useOTPSync hook
+ */
 export interface UseOTPSyncOptions {
+  /** The document ID being protected */
   documentId: string;
+  /** ID of the current user */
   currentUserId: number;
+  /** Name of the current user */
   currentUserName: string;
+  /** Server broadcast containing OTP state updates */
   otpBroadcast: OTPBroadcast | undefined;
 }
 
+/**
+ * Return value from useOTPSync hook
+ */
 export interface UseOTPSyncResult {
+  /** Current OTP token or null if disabled */
   otp: string | null;
+  /** Whether OTP protection is currently enabled */
   otpEnabled: boolean;
+  /** Whether an API request is in progress */
   isToggling: boolean;
+  /** Shareable document URL (includes OTP if enabled) */
   documentUrl: string;
+  /** Function to enable or disable OTP protection */
   toggleOTP: (enabled: boolean) => Promise<void>;
 }
 
 /**
- * Hook to manage OTP protection state with broadcast synchronization
+ * Manages OTP (One-Time Password) protection state with server synchronization.
+ *
+ * This hook handles:
+ * - Initialization from URL parameters
+ * - Server broadcast synchronization (all clients stay in sync)
+ * - API calls to enable/disable protection
+ * - URL updates when OTP state changes
+ * - Toast notifications for state changes
+ *
+ * State updates follow a broadcast pattern: when a user toggles OTP, the API
+ * call triggers a server broadcast, and all clients (including the initiator)
+ * update their state from the broadcast. This ensures consistency.
+ *
+ * @param options - Configuration for OTP synchronization
+ * @returns OTP state and control functions
+ *
+ * @throws {ApiError} When OTP API requests fail (error is caught and shown via toast)
+ *
+ * @example
+ * ```tsx
+ * const { otpEnabled, toggleOTP, documentUrl } = useOTPSync({
+ *   documentId: 'abc123',
+ *   currentUserId: 42,
+ *   currentUserName: 'Alice',
+ *   otpBroadcast
+ * });
+ *
+ * // Toggle OTP protection
+ * await toggleOTP(true);
+ *
+ * // Share the URL (includes OTP if enabled)
+ * navigator.clipboard.writeText(documentUrl);
+ * ```
  */
 export function useOTPSync({
   documentId,
@@ -111,21 +158,29 @@ export function useOTPSync({
 
   // Toggle OTP protection
   async function toggleOTP(enabled: boolean) {
+    logger.debug('[OTPToggle] Starting toggle:', { enabled, documentId });
     setIsToggling(true);
     try {
       if (enabled) {
         // Enable OTP protection
+        logger.debug('[OTPToggle] Calling protectDocument API');
         await protectDocument(documentId, currentUserId, currentUserName);
+        logger.info('[OTPToggle] Successfully enabled OTP protection');
         // State will update from broadcast
       } else {
         // Disable OTP protection - requires current OTP
         if (!otp) {
-          throw new Error('Cannot disable OTP: no OTP available');
+          const errorMsg = 'Cannot disable OTP: no OTP available';
+          logger.error('[OTPToggle] Error:', errorMsg);
+          throw new Error(errorMsg);
         }
+        logger.debug('[OTPToggle] Calling unprotectDocument API');
         await unprotectDocument(documentId, currentUserId, currentUserName, otp);
+        logger.info('[OTPToggle] Successfully disabled OTP protection');
         // State will update from broadcast
       }
     } catch (error) {
+      logger.error('[OTPToggle] Failed to toggle OTP:', error);
       toast({
         title: 'Error',
         description: error instanceof Error ? error.message : 'Failed to toggle OTP protection',

@@ -70,18 +70,30 @@ export function DocumentProvider({
 
   // Initialize Kolabpad instance when editor is ready
   useEffect(() => {
-    if (!editor?.getModel()) return;
+    if (!editor?.getModel()) {
+      logger.debug('[DocumentProvider] Waiting for editor model');
+      return;
+    }
+
+    logger.info('[DocumentProvider] Initializing Kolabpad for document:', documentId);
 
     kolabpad.current = new Kolabpad({
       uri: getWsUri(documentId),
       editor,
-      onConnected: () => setConnection("connected"),
-      onDisconnected: () => setConnection("disconnected"),
+      onConnected: () => {
+        logger.info('[DocumentProvider] Connected to document:', documentId);
+        setConnection("connected");
+      },
+      onDisconnected: () => {
+        logger.info('[DocumentProvider] Disconnected from document:', documentId);
+        setConnection("disconnected");
+      },
       onIdentity: (userId) => {
         setMyUserId(userId);
-        logger.debug('[Identity] User ID set:', userId);
+        logger.info('[DocumentProvider] User ID assigned:', userId);
       },
       onDesynchronized: () => {
+        logger.error('[DocumentProvider] Desynchronized from server');
         setConnection("desynchronized");
         toast({
           title: "Desynchronized with server",
@@ -92,23 +104,32 @@ export function DocumentProvider({
       },
       onAuthError: () => {
         if (!authErrorShownRef.current) {
+          logger.error('[DocumentProvider] Authentication failed');
           authErrorShownRef.current = true;
           setConnection("disconnected");
           setIsAuthBlocked(true);
         }
       },
       onChangeLanguage: (language, userId, userName) => {
+        logger.debug('[DocumentProvider] Language broadcast received:', { language, userId, userName });
         if (languages.includes(language)) {
           setLanguageBroadcast({ language, userId, userName });
+        } else {
+          logger.error('[DocumentProvider] Invalid language received:', language);
         }
       },
-      onChangeUsers: setUsers,
+      onChangeUsers: (users) => {
+        logger.debug('[DocumentProvider] Users updated, count:', Object.keys(users).length);
+        setUsers(users);
+      },
       onChangeOTP: (otp, userId, userName) => {
+        logger.debug('[DocumentProvider] OTP broadcast received:', { otp: otp ? '[REDACTED]' : null, userId, userName });
         setOtpBroadcast({ otp, userId, userName });
       },
     });
 
     return () => {
+      logger.info('[DocumentProvider] Cleaning up Kolabpad instance');
       kolabpad.current?.dispose();
       kolabpad.current = undefined;
     };
@@ -117,6 +138,7 @@ export function DocumentProvider({
   // Update user info when connected
   useEffect(() => {
     if (connection === "connected") {
+      logger.debug('[DocumentProvider] Updating user info:', { name, hue });
       kolabpad.current?.setInfo({ name, hue });
     }
   }, [connection, name, hue]);
@@ -138,6 +160,7 @@ export function DocumentProvider({
 
   // Helper to send language change - just sends message, no local updates
   const sendLanguageChange = (newLanguage: string) => {
+    logger.debug('[DocumentProvider] Sending language change:', newLanguage);
     kolabpad.current?.setLanguage(newLanguage);
   };
 

@@ -16,6 +16,19 @@ export default defineConfig(({ mode }) => {
 
   return {
     base: "",
+    resolve: {
+      alias: {
+        '@': resolve(__dirname, './src'),
+        '@/components': resolve(__dirname, './src/components'),
+        '@/hooks': resolve(__dirname, './src/hooks'),
+        '@/utils': resolve(__dirname, './src/utils'),
+        '@/types': resolve(__dirname, './src/types'),
+        '@/api': resolve(__dirname, './src/api'),
+        '@/services': resolve(__dirname, './src/services'),
+        '@/contexts': resolve(__dirname, './src/contexts'),
+        '@/theme': resolve(__dirname, './src/theme'),
+      },
+    },
     build: {
       chunkSizeWarningLimit: 1000,
     },

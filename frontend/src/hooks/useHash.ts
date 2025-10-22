@@ -2,7 +2,14 @@ import { useEffect, useState } from "react";
 
 import { DOCUMENT } from "../constants";
 
-function getHash() {
+/**
+ * Extracts the document ID from the URL hash.
+ * If no hash exists, generates a new random document ID.
+ *
+ * @returns The document ID (without query parameters)
+ * @private
+ */
+function getHash(): string {
   const fullHash = window.location.hash.slice(1);
 
   if (!fullHash) {
@@ -20,7 +27,24 @@ function getHash() {
   return fullHash.split('?')[0];
 }
 
-export function useHash() {
+/**
+ * Custom hook to manage document ID routing via URL hash.
+ *
+ * Automatically generates a new document ID if none exists in the URL.
+ * Listens for hash changes and updates the document ID accordingly.
+ * Preserves query parameters (like OTP) while extracting the document ID.
+ *
+ * @returns The current document ID from the URL hash
+ *
+ * @example
+ * ```tsx
+ * function App() {
+ *   const documentId = useHash(); // "abc123" from "#abc123?otp=token"
+ *   return <DocumentProvider documentId={documentId}>...</DocumentProvider>;
+ * }
+ * ```
+ */
+export function useHash(): string {
   const [hash, setHash] = useState(getHash);
 
   useEffect(() => {

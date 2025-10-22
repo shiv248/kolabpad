@@ -32,22 +32,34 @@ export function useColorCollision({
   useEffect(() => {
     // Only check once when initially connected
     if (connection !== 'connected' || myUserId === -1 || collisionCheckDoneRef.current) {
+      logger.debug('[ColorCollision] Skipping check:', {
+        connection,
+        myUserId,
+        alreadyChecked: collisionCheckDoneRef.current,
+      });
       return;
     }
+
+    logger.debug('[ColorCollision] Running collision check on join');
 
     // Extract hues from other users (excluding self)
     const existingHues = Object.entries(users)
       .filter(([id]) => Number(id) !== myUserId)
       .map(([, user]) => user.hue);
 
+    logger.debug('[ColorCollision] Existing hues:', existingHues);
+
     // Check if current hue collides with existing users
     if (existingHues.length > 0 && hasHueCollision(currentHue, existingHues)) {
       const newHue = generateHue(existingHues);
-      logger.debug('[Color] Collision detected on join, changing hue from %d to %d', currentHue, newHue);
+      logger.info('[ColorCollision] Collision detected, changing hue from %d to %d', currentHue, newHue);
       onHueChange(newHue);
+    } else {
+      logger.debug('[ColorCollision] No collision detected, keeping hue:', currentHue);
     }
 
     // Mark collision check as done for this document session
     collisionCheckDoneRef.current = true;
+    logger.debug('[ColorCollision] Check completed, marked as done');
   }, [connection, myUserId, users, currentHue, onHueChange]);
 }
