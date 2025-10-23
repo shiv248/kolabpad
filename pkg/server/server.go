@@ -76,7 +76,6 @@ func NewServer(db *database.Database, maxDocumentSize, broadcastBufferSize int, 
 
 	// API routes (must be registered first for priority)
 	s.mux.HandleFunc("/api/socket/", s.handleSocket)
-	s.mux.HandleFunc("/api/text/", s.handleText)
 	s.mux.HandleFunc("/api/stats", s.handleStats)
 	s.mux.HandleFunc("/api/document/", s.handleDocument)
 
@@ -210,41 +209,6 @@ func (s *Server) handleSocket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	conn.Close(websocket.StatusNormalClosure, "")
-}
-
-// handleText returns the current document text.
-// Route: /api/text/{id}
-func (s *Server) handleText(w http.ResponseWriter, r *http.Request) {
-	docID := r.URL.Path[len("/api/text/"):]
-	if docID == "" {
-		http.Error(w, "document ID required", http.StatusBadRequest)
-		return
-	}
-
-	// Check if document exists in memory
-	if val, ok := s.state.documents.Load(docID); ok {
-		doc := val.(*Document)
-		text := doc.Kolabpad.Text()
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		w.Write([]byte(text))
-		return
-	}
-
-	// Try loading from database
-	if s.state.db != nil {
-		doc, err := s.state.db.Load(docID)
-		if err != nil {
-			logger.Error("Error loading document from DB: %v", err)
-		} else if doc != nil {
-			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-			w.Write([]byte(doc.Text))
-			return
-		}
-	}
-
-	// Document doesn't exist, return empty
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.Write([]byte(""))
 }
 
 // handleStats returns server statistics.
