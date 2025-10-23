@@ -11,7 +11,7 @@ services:
       - PORT=${PORT:-3030}
       - LOG_LEVEL=${LOG_LEVEL:-info}
       - EXPIRY_DAYS=${EXPIRY_DAYS:-7}
-      - SQLITE_URI=${SQLITE_URI:-/data/kolabpad.db}
+      - SQLITE_URI=/data/kolabpad.db
     volumes:
       - ./data:/data
     restart: unless-stopped

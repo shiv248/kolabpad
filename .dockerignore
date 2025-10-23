@@ -1,31 +1,69 @@
 # Git
 .git
 .gitignore
+.gitattributes
 
-# Development
-dev-internal/
-*.local.*
-
-# Build artifacts
+# Build artifacts (rebuilt in Docker)
 bin/
+dist/
+frontend/dist/
+frontend/.vite/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
 *.test
 *.out
+*.wasm
+wasm_exec.js
 
-# Data
+# Dependencies (reinstalled in Docker)
+node_modules/
+frontend/node_modules/
+vendor/
+
+# Database (volume mounted)
 *.db
 *.db-shm
 *.db-wal
 data/
 
-# Documentation
-README.md
-docs/
+# Development
+dev-internal/
+*.local.*
+.env
+.env.local
+.env.*.local
 
 # IDE
 .vscode/
 .idea/
 *.swp
+*.swo
+*~
 
 # OS
 .DS_Store
 Thumbs.db
+
+# Logs
+*.log
+
+# Documentation
+README.md
+docs/
+*.md
+!go.mod
+
+# Go workspace
+go.work
+go.work.sum
+
+# Docker files (not needed in build context)
+docker-compose*.yml
+.dockerignore
+
+# CI/CD
+.github/
+.gitlab-ci.yml
