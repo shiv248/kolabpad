@@ -133,7 +133,6 @@
 | **User connects (hot doc)** | Document already in memory | Initial state (ops, users, cursors, language, OTP) |
 | **OTP validation (hot doc)** | Document in memory | OTP from memory (no DB read) |
 | **Real-time updates** | Another user edits | Operations since last revision |
-| **API `/api/text/{id}`** | Document exists in memory | Current text string |
 
 ---
 
@@ -912,8 +911,9 @@ done
 echo "test data" | websocat ws://localhost:3030/api/socket/test
 pkill -SIGTERM kolabpad-server
 ./kolabpad-server &
-curl http://localhost:3030/api/text/test
-# Expect: "test data"
+# Reconnect and verify document was persisted
+websocat ws://localhost:3030/api/socket/test
+# Expect: Document state restored with "test data"
 
 # Test 4: DoS prevention (invalid OTP, cold doc)
 for i in {1..1000}; do

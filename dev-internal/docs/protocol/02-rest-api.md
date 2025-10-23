@@ -11,12 +11,11 @@
 1. [API Overview](#api-overview)
 2. [Endpoint: POST /api/document/{id}/protect](#endpoint-post-apidocumentidprotect)
 3. [Endpoint: DELETE /api/document/{id}/protect](#endpoint-delete-apidocumentidprotect)
-4. [Endpoint: GET /api/text/{id}](#endpoint-get-apitextid)
-5. [Endpoint: GET /api/stats](#endpoint-get-apistats)
-6. [Endpoint: GET /api/socket/{id}](#endpoint-get-apisocketid)
-7. [Why OTP Uses REST, Not WebSocket](#why-otp-uses-rest-not-websocket)
-8. [Error Handling](#error-handling)
-9. [Security Considerations](#security-considerations)
+4. [Endpoint: GET /api/stats](#endpoint-get-apistats)
+5. [Endpoint: GET /api/socket/{id}](#endpoint-get-apisocketid)
+6. [Why OTP Uses REST, Not WebSocket](#why-otp-uses-rest-not-websocket)
+7. [Error Handling](#error-handling)
+8. [Security Considerations](#security-considerations)
 
 ---
 
@@ -285,97 +284,6 @@ window.location.hash = 'abc123';
 
 // User sees toast: "OTP protection disabled"
 // Other users see toast: "{userName} disabled OTP protection"
-```
-
----
-
-## Endpoint: GET /api/text/{id}
-
-**Purpose**: Retrieve document text as plain text.
-
-### Request
-
-**HTTP Method**: `GET`
-
-**URL**: `/api/text/{id}`
-
-**Path Parameters**:
-- `{id}` (string): Document ID
-
-**Query Parameters**: None
-
-**Example**:
-```http
-GET /api/text/abc123 HTTP/1.1
-Host: localhost:3030
-```
-
-### Response
-
-**Success (200 OK)**:
-```http
-HTTP/1.1 200 OK
-Content-Type: text/plain; charset=utf-8
-
-Hello world!
-This is the document content.
-```
-
-**Document Not Found (200 OK with empty body)**:
-```http
-HTTP/1.1 200 OK
-Content-Type: text/plain; charset=utf-8
-
-```
-
-### Behavior
-
-**What Happens**:
-
-```pseudocode
-1. Check if document exists in memory (hot path)
-   IF document in activeDocuments:
-       text = document.getText()
-       RETURN 200 OK with text
-
-2. Try loading from database (cold path)
-   IF database enabled:
-       persistedDoc = database.load(id)
-       IF persistedDoc exists:
-           RETURN 200 OK with persistedDoc.text
-
-3. Document doesn't exist
-   RETURN 200 OK with empty string
-```
-
-**Use Cases**:
-- External tools reading document content
-- API integrations
-- Backup/export scripts
-- NOT used by frontend (uses WebSocket for real-time updates)
-
-**No OTP Check**:
-- This endpoint does NOT validate OTP
-- Anyone can read any document if they know the ID
-- Trade-off: Simplicity over security (documents are ephemeral)
-- Future: Could add OTP validation for protected documents
-
-### Client Usage
-
-**cURL Example**:
-```bash
-curl http://localhost:3030/api/text/abc123
-
-# Output:
-# Hello world!
-# This is the document content.
-```
-
-**JavaScript Example**:
-```javascript
-const response = await fetch('/api/text/abc123');
-const text = await response.text();
-console.log(text);
 ```
 
 ---
@@ -915,7 +823,6 @@ ON protect/unprotect:
 - Route registration: `pkg/server/server.go` (see `NewServer` and `handleDocument`)
 - OTP endpoints: `pkg/server/server.go` (see `handleProtectDocument` and `handleUnprotectDocument`)
 - Stats endpoint: `pkg/server/server.go` (see `handleStats`)
-- Text endpoint: `pkg/server/server.go` (see `handleText`)
 
 **Frontend**:
 - API client: `frontend/src/api/documents.ts`
