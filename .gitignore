@@ -17,7 +17,7 @@ go.work.sum
 # Binaries
 /bin/
 /dist/
-server
+/server
 bin/
 
 # IDE
