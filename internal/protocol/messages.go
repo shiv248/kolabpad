@@ -5,7 +5,7 @@ package protocol
 import (
 	"encoding/json"
 
-	"github.com/shiv248/kolabpad/pkg/ot"
+	ot "github.com/shiv248/operational-transformation-go"
 )
 
 // UserInfo represents a connected user's display information.

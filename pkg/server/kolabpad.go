@@ -9,7 +9,7 @@ import (
 
 	"github.com/shiv248/kolabpad/internal/protocol"
 	"github.com/shiv248/kolabpad/pkg/logger"
-	"github.com/shiv248/kolabpad/pkg/ot"
+	ot "github.com/shiv248/operational-transformation-go"
 )
 
 // State represents the shared document state protected by a lock.

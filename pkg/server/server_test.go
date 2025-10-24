@@ -14,7 +14,7 @@ import (
 
 	"github.com/shiv248/kolabpad/internal/protocol"
 	"github.com/shiv248/kolabpad/pkg/database"
-	"github.com/shiv248/kolabpad/pkg/ot"
+	ot "github.com/shiv248/operational-transformation-go"
 )
 
 // testServer creates a test server with an in-memory database.

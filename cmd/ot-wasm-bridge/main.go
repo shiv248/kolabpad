@@ -8,7 +8,7 @@ import (
 	"sync"
 	"syscall/js"
 
-	"github.com/shiv248/kolabpad/pkg/ot"
+	ot "github.com/shiv248/operational-transformation-go"
 )
 
 // Global registry to store Go OpSeq pointers
