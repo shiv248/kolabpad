@@ -23,7 +23,7 @@ export function AboutSection({ darkMode, onLoadSample }: AboutSectionProps) {
         <Link
           color={darkMode ? colors.dark.accent.link : colors.light.accent.link}
           fontWeight="semibold"
-          href="http://github.com/shiv248/operational-transformation-go"
+          href="https://github.com/shiv248/operational-transformation-go"
           isExternal
         >
           Operational Transformation
