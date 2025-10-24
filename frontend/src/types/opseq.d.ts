@@ -5,7 +5,7 @@
  * compiled to WebAssembly for browser-side OT operations.
  *
  * @see /cmd/ot-wasm-bridge/main.go - WASM bridge implementation
- * @see /pkg/ot - Go OT library source
+ * @see https://github.com/shiv248/operational-transformation-go - Go OT library source
  */
 
 /**

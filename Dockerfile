@@ -9,8 +9,7 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy OT library and WASM bridge
-COPY pkg/ot ./pkg/ot
+# Copy WASM bridge
 COPY cmd/ot-wasm-bridge ./cmd/ot-wasm-bridge
 
 # Build WASM module
