@@ -233,11 +233,11 @@ func main() {
 			return nil
 		}
 		jsonStr := args[0].String()
-		op, err := ot.FromJSON(jsonStr)
-		if err != nil {
+		var op ot.OperationSeq
+		if err := json.Unmarshal([]byte(jsonStr), &op); err != nil {
 			return nil
 		}
-		return wrapOpSeq(op)
+		return wrapOpSeq(&op)
 	})
 
 	// OpSeq.with_capacity(n) - create with capacity
