@@ -1,3 +1,6 @@
+<p>
+<img src="frontend/public/android-chrome-512x512.png" alt="Kolabpad Logo" width="128">
+
 # Kolabpad
 
 A real-time collaborative text editor powered by Operational Transformation. Multiple users can edit the same document simultaneously with instant synchronization and conflict-free merging.

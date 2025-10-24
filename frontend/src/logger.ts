@@ -19,8 +19,10 @@ const getLogLevel = (): LogLevel => {
 const currentLevel = getLogLevel();
 const currentLevelOrder = logLevelOrder[currentLevel];
 
-// Log the current level on startup
-console.log(`[LOGGER] Frontend log level: ${currentLevel}`);
+// Log the current level on startup (unless it's error-only)
+if (currentLevel !== 'error') {
+  console.log(`[LOGGER] Frontend log level: ${currentLevel}`);
+}
 
 // Logger functions
 export const logger = {
