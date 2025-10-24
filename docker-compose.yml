@@ -3,13 +3,13 @@ services:
     build:
       context: .
       args:
-        LOG_LEVEL: ${LOG_LEVEL:-info}
+        FRONTEND_LOG_LEVEL: ${FRONTEND_LOG_LEVEL:-error}
         VITE_SHA: ${VITE_SHA:-}
     ports:
       - "${PORT:-3030}:3030"
     environment:
       - PORT=${PORT:-3030}
-      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - LOG_LEVEL=${BACKEND_LOG_LEVEL:-info}
       - EXPIRY_DAYS=${EXPIRY_DAYS:-7}
       - SQLITE_URI=/data/kolabpad.db
     volumes:

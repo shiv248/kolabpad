@@ -23,7 +23,7 @@ FROM node:18-alpine AS frontend
 WORKDIR /app
 
 # Accept build arguments
-ARG LOG_LEVEL=info
+ARG FRONTEND_LOG_LEVEL=error
 ARG VITE_SHA
 
 # Install dependencies
@@ -41,7 +41,7 @@ COPY --from=wasm /app/wasm_exec.js ./public/
 COPY pkg/server/kolabpad.go ../pkg/server/kolabpad.go
 
 # Build frontend - ENV vars will be read by vite.config.ts from ARG
-ENV LOG_LEVEL=${LOG_LEVEL}
+ENV LOG_LEVEL=${FRONTEND_LOG_LEVEL}
 ENV VITE_SHA=${VITE_SHA}
 RUN npm run build
 

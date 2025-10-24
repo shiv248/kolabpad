@@ -1,0 +1,60 @@
+# docker-compose.prod.yml
+# Production overlay for docker-compose.yml
+#
+# Usage:
+#   export DOMAIN=kolabpad.com
+#   export EMAIL=you@example.com
+#   docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Or use Makefile:
+#   make deploy-prod
+
+services:
+  kolabpad:
+    # Remove external port exposure for security
+    # Only Caddy will be publicly accessible
+    ports: !reset []
+    expose:
+      - "3030"
+    networks:
+      - kolabpad-net
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: kolabpad-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"      # HTTP (redirects to HTTPS)
+      - "443:443"    # HTTPS
+      - "443:443/udp"  # HTTP/3 (QUIC)
+    environment:
+      # Required: Domain and email for SSL certificates
+      - DOMAIN=${DOMAIN:?DOMAIN environment variable is required}
+      - EMAIL=${EMAIL:?EMAIL environment variable is required}
+    volumes:
+      # Caddyfile configuration
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Persistent storage for SSL certificates and data
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - kolabpad-net
+    depends_on:
+      - kolabpad
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  kolabpad-net:
+    driver: bridge
+
+volumes:
+  # SSL certificates and Caddy data persist across restarts
+  caddy_data:
+    driver: local
+  caddy_config:
+    driver: local

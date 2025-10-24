@@ -170,6 +170,42 @@ docker-clean:  ## Stop containers, remove project images and data
 docker-logs:  ## Tail Docker container logs
 	docker-compose logs -f
 
+docker-prod-up:  ## Start Docker containers with production config (Caddy + SSL)
+	@echo "🚀 Starting production Docker stack..."
+	@echo "   Ensure DOMAIN and EMAIL are set in .env file"
+	@echo ""
+	docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+	@echo ""
+	@echo "✅ Production stack started!"
+	@echo "📜 SSL certificate will be automatically provisioned by Let's Encrypt"
+	@echo ""
+	@echo "Check status:"
+	@echo "  make docker-prod-logs    # View logs"
+	@echo "  docker ps                # Check running containers"
+
+docker-prod-build:  ## Build and start Docker containers with production config (clean build, auto-injects git SHA)
+	@GIT_SHA=$$(git rev-parse --short HEAD 2>/dev/null || echo "unknown"); \
+	echo "🔨 Building production Docker stack (clean build, no cache)..."; \
+	echo "   Git SHA: $$GIT_SHA"; \
+	echo ""; \
+	VITE_SHA=$$GIT_SHA docker-compose -f docker-compose.yml -f docker-compose.prod.yml build --no-cache && \
+	docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+	@echo ""
+	@echo "✅ Production stack built and started!"
+
+docker-prod-down:  ## Stop Docker containers (production config)
+	@echo "🛑 Stopping production Docker stack..."
+	docker-compose -f docker-compose.yml -f docker-compose.prod.yml down
+	@echo "✅ Production containers stopped"
+
+docker-prod-logs:  ## Tail Docker logs (production config)
+	docker-compose -f docker-compose.yml -f docker-compose.prod.yml logs -f
+
+docker-prod-restart:  ## Restart Docker containers (production config)
+	@echo "🔄 Restarting production Docker stack..."
+	docker-compose -f docker-compose.yml -f docker-compose.prod.yml restart
+	@echo "✅ Production containers restarted"
+
 ##################
 # Quality targets #
 ##################

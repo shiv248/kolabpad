@@ -1,0 +1,41 @@
+# Caddyfile - Production reverse proxy configuration
+# Requires environment variables: DOMAIN, EMAIL
+
+{
+	# Email for Let's Encrypt notifications (certificate expiry, issues)
+	email {$EMAIL}
+
+	# Enable admin API (optional, useful for debugging)
+	# admin off
+}
+
+# Main domain - serves the application
+{$DOMAIN} {
+	# Reverse proxy to Kolabpad container
+	reverse_proxy kolabpad:3030
+
+	# Security headers
+	header {
+		# Enforce HTTPS for 1 year
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		# Prevent MIME type sniffing
+		X-Content-Type-Options "nosniff"
+		# Prevent clickjacking
+		X-Frame-Options "DENY"
+		# Enable XSS filter
+		X-XSS-Protection "1; mode=block"
+		# Don't send referrer to external sites
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+
+	# Logging (optional, remove in production if not needed)
+	log {
+		output file /data/access.log
+		format json
+	}
+}
+
+# Redirect www to non-www
+www.{$DOMAIN} {
+	redir https://{$DOMAIN}{uri} permanent
+}
