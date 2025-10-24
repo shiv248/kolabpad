@@ -39,7 +39,7 @@ Kolabpad is **not** designed for:
 
 ### 1. Go Backend
 
-**Location**: `cmd/server/`, `pkg/server/`, `pkg/ot/`, `pkg/database/`
+**Location**: `cmd/server/`, `pkg/server/`, `pkg/database/`
 
 The backend handles:
 - WebSocket server for real-time communication

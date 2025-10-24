@@ -734,10 +734,7 @@ make dev-frontend
 go test -v ./...
 
 # Run specific package
-go test -v ./pkg/ot/...
-
-# Run specific test
-go test -v -run TestTransform ./pkg/ot/
+go test -v ./pkg/server/...
 ```
 
 **Issue**: Frontend tests fail

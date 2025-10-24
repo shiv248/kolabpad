@@ -118,72 +118,7 @@ frontend/src/
 
 ## Backend Testing
 
-### OT Algorithm Tests
-
-**Highest priority** - Must have 100% coverage of transform and compose logic.
-
-**Test file**: `pkg/ot/transform_test.go`
-
-**Example test structure**:
-
-```pseudocode
-TEST transform with concurrent inserts:
-    doc = "hello"
-
-    opA = Insert("X") at position 5    // "helloX"
-    opB = Insert("Y") at position 5    // "helloY"
-
-    // Transform both operations
-    (opA', opB') = transform(opA, opB)
-
-    // Apply in different orders
-    resultAB = apply(apply(doc, opA), opB')
-    resultBA = apply(apply(doc, opB), opA')
-
-    // Must converge to same result
-    ASSERT resultAB == resultBA
-    ASSERT resultAB == "helloXY" OR resultAB == "helloYX"  // Either order valid
-```
-
-**Key test scenarios**:
-
-1. **Insert vs Insert**:
-   - Same position (ordering tie-breaking)
-   - Different positions
-   - Overlapping positions
-
-2. **Delete vs Delete**:
-   - Same range
-   - Overlapping ranges
-   - Adjacent ranges
-
-3. **Insert vs Delete**:
-   - Insert before delete
-   - Insert after delete
-   - Insert in middle of delete range
-
-4. **Complex operations**:
-   - Multiple components (retain + insert + delete)
-   - Very long operations
-   - Unicode characters (emoji, multi-byte)
-   - Empty operations
-
-5. **Compose operations**:
-   - Multiple inserts combined
-   - Multiple deletes combined
-   - Alternating inserts and deletes
-
-**Run OT tests**:
-
-```bash
-go test ./pkg/ot/... -v
-
-# With coverage
-go test ./pkg/ot/... -cover
-
-# Specific test
-go test ./pkg/ot/... -run TestTransform -v
-```
+> **Note**: OT algorithm tests are maintained in the external [operational-transformation-go](https://github.com/shiv248/operational-transformation-go) library.
 
 ### Persistence Tests
 
@@ -828,22 +763,22 @@ done
 **View detailed output**:
 
 ```bash
-go test -v ./pkg/ot/... -run TestTransform
+go test -v ./pkg/server/... -run TestConcurrentEdits
 ```
 
 **Run single test**:
 
 ```bash
-go test -v ./pkg/ot/... -run TestTransform/concurrent_inserts
+go test -v ./pkg/server/... -run TestEditBroadcast
 ```
 
 **Add debug logging**:
 
 ```go
-func TestTransform(t *testing.T) {
+func TestEditBroadcast(t *testing.T) {
     // ...
-    t.Logf("Operation A: %+v", opA)
-    t.Logf("Operation B: %+v", opB)
+    t.Logf("Operation: %+v", operation)
+    t.Logf("User ID: %d", userID)
     t.Logf("Result: %+v", result)
     // ...
 }
@@ -855,10 +790,10 @@ func TestTransform(t *testing.T) {
 # Install: go install github.com/go-delve/delve/cmd/dlv@latest
 
 # Run test with debugger
-dlv test ./pkg/ot/... -- -test.run TestTransform
+dlv test ./pkg/server/... -- -test.run TestConcurrentEdits
 
 # Set breakpoint
-(dlv) break transform.go:42
+(dlv) break kolabpad.go:100
 (dlv) continue
 ```
 

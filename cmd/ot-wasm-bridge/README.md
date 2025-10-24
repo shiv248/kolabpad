@@ -1,6 +1,6 @@
 # Go WASM OT Bridge
 
-Bridges the Go OT library (`pkg/ot`) to the browser by compiling to WebAssembly and exposing a JavaScript API.
+Bridges the Go OT library ([operational-transformation-go](https://github.com/shiv248/operational-transformation-go)) to the browser by compiling to WebAssembly and exposing a JavaScript API.
 
 ## Architecture
 

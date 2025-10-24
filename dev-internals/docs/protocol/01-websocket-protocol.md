@@ -916,5 +916,5 @@ ON user types rapidly:
 - Message handling: Same file, `onMessage` handler
 
 **OT Format**:
-- Serialization: `pkg/ot/serde.go`
-- Operation structure: `pkg/ot/operation.go`
+- Serialization: [serde.go](https://github.com/shiv248/operational-transformation-go/blob/main/serde.go)
+- Operation structure: [operation.go](https://github.com/shiv248/operational-transformation-go/blob/main/operation.go)
