@@ -128,22 +128,92 @@ Internet
 Environment variables for production:
 
 ```bash
-✓ PORT=3030                          # Or load balancer target
-✓ LOG_LEVEL=info                     # Not debug (too verbose)
-✓ EXPIRY_DAYS=7                      # Adjust based on use case
-✓ SQLITE_URI=/data/kolabpad.db       # Persistent volume path
-✓ CLEANUP_INTERVAL_HOURS=1           # Default is fine
-✓ MAX_DOCUMENT_SIZE_KB=256           # Prevent abuse
-✓ WS_READ_TIMEOUT_MINUTES=30         # Disconnect idle clients
-✓ WS_WRITE_TIMEOUT_SECONDS=10        # Disconnect slow clients
-✓ BROADCAST_BUFFER_SIZE=16           # Default is fine
+✓ DOMAIN=yourdomain.com                      # Required for Caddy/SSL
+✓ EMAIL=you@example.com                      # Required for Let's Encrypt
+✓ PORT=3030                                   # Internal port (Caddy proxies to this)
+✓ BACKEND_LOG_LEVEL=info                     # Go server logs (not debug - too verbose)
+✓ FRONTEND_LOG_LEVEL=error                   # Browser console (error only for production)
+✓ EXPIRY_DAYS=7                              # Adjust based on use case
+✓ SQLITE_URI=/data/kolabpad.db               # Persistent volume path
+✓ CLEANUP_INTERVAL_HOURS=1                   # Default is fine
+✓ MAX_DOCUMENT_SIZE_KB=256                   # Prevent abuse
+✓ WS_READ_TIMEOUT_MINUTES=30                 # Disconnect idle clients
+✓ WS_WRITE_TIMEOUT_SECONDS=10                # Disconnect slow clients
+✓ BROADCAST_BUFFER_SIZE=16                   # Default is fine
 ```
 
 ---
 
 ## Deployment Methods
 
-### Docker Deployment (Recommended)
+### Docker + Caddy Production Deployment (Recommended)
+
+**New streamlined production deployment** with automatic HTTPS via Caddy reverse proxy.
+
+**Quick start**:
+
+```bash
+# 1. Configure environment
+cp .env.example .env
+vim .env  # Set DOMAIN and EMAIL
+
+# 2. Deploy with one command
+make docker-prod-build
+
+# 3. View logs
+make docker-prod-logs
+```
+
+**What this does**:
+- Builds Docker images with no cache (clean production build)
+- Automatically injects current git SHA into frontend for versioning
+- Starts Caddy reverse proxy on ports 80/443
+- Caddy automatically obtains Let's Encrypt SSL certificate for your DOMAIN
+- Kolabpad runs internally, only accessible via Caddy
+- Automatic SSL renewal every 60 days
+
+**Production Makefile commands**:
+
+```bash
+make docker-prod-build     # Clean build + deploy (auto git SHA injection)
+make docker-prod-up        # Start containers (uses existing images)
+make docker-prod-down      # Stop containers
+make docker-prod-restart   # Restart without rebuilding
+make docker-prod-logs      # Tail combined logs
+```
+
+**Architecture**:
+
+```
+Internet (port 443/80)
+    ↓
+[Caddy Container]
+    ├── Automatic HTTPS (Let's Encrypt)
+    ├── Security headers (HSTS, CSP, etc.)
+    ├── Port 80 → 443 redirect
+    └── Reverse proxy to Kolabpad
+    ↓
+[Kolabpad Container] (internal :3030)
+    ├── Go backend
+    ├── Frontend static files
+    └── SQLite database
+```
+
+**Files**:
+- `docker-compose.yml` - Base configuration
+- `docker-compose.prod.yml` - Production overlay (adds Caddy)
+- `Caddyfile` - Caddy configuration (reads DOMAIN and EMAIL from env)
+
+**Environment requirements**:
+- `DOMAIN`: Your domain name (e.g., kolabpad.com)
+- `EMAIL`: Email for Let's Encrypt notifications
+- DNS must point to your server IP
+
+---
+
+### Docker Deployment (Manual)
+
+For custom deployments or non-Caddy setups:
 
 **Build image**:
 
@@ -260,7 +330,7 @@ sudo cp -r frontend/dist/* /opt/kolabpad/dist/
 sudo cp .env.example /opt/kolabpad/.env
 
 # Configure
-sudo nano /opt/kolabpad/.env  # Set production values
+sudo vim /opt/kolabpad/.env  # Set production values
 
 # Create user
 sudo useradd -r -s /bin/false kolabpad
@@ -672,11 +742,23 @@ groups:
 
 ### Log Levels
 
-Configure via `LOG_LEVEL` environment variable:
+Kolabpad has **separate log levels** for backend and frontend:
 
+**Backend (Go server)** - Configure via `BACKEND_LOG_LEVEL`:
 - **debug**: Verbose (every message, operation, state change)
-- **info**: Standard operational events (recommended for production)
-- **error**: Only errors (too quiet, not recommended)
+- **info**: Standard operational events (**recommended for production**)
+- **error**: Only errors (too quiet, not recommended - you won't see startup/requests)
+
+**Frontend (Browser console)** - Configure via `FRONTEND_LOG_LEVEL`:
+- **debug**: All console.log visible (development only)
+- **info**: Info and error logs
+- **error**: Only error logs (**recommended for production** - keeps console clean)
+
+**Production recommendation**:
+```bash
+BACKEND_LOG_LEVEL=info      # See server operations in docker logs
+FRONTEND_LOG_LEVEL=error    # Keep browser console quiet
+```
 
 ### Key Log Events
 

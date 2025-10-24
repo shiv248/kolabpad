@@ -33,7 +33,7 @@ make dev-frontend
 
 Open your browser to `http://localhost:5173`
 
-### Docker Mode
+### Docker Mode (Development)
 
 Production-like environment in a single container:
 
@@ -46,6 +46,39 @@ make docker-up
 ```
 
 Open your browser to `http://localhost:3030`
+
+### Production Deployment
+
+Deploy to any VPS with Docker, automatic HTTPS via Caddy:
+
+```bash
+# 1. Set up environment variables
+cp .env.example .env
+vim .env  # Set DOMAIN and EMAIL
+
+# 2. Deploy with production configuration
+make docker-prod-build
+
+# 3. View logs
+make docker-prod-logs
+```
+
+**What happens:**
+- Caddy reverse proxy listens on ports 80 (HTTP) and 443 (HTTPS)
+- Automatic SSL certificate from Let's Encrypt using your `DOMAIN` and `EMAIL`
+- Application container runs internally, only accessible via Caddy
+- Git SHA automatically injected into frontend build for versioning
+
+**Production commands:**
+```bash
+make docker-prod-build    # Clean build and deploy (no cache)
+make docker-prod-up       # Start containers (uses existing images)
+make docker-prod-down     # Stop containers
+make docker-prod-restart  # Restart without rebuilding
+make docker-prod-logs     # Tail logs
+```
+
+Your site will be available at `https://your-domain.com` with automatic SSL renewal.
 
 ## Architecture
 
@@ -70,7 +103,9 @@ kolabpad/
 │   │   └── types/           # TypeScript definitions
 │   └── public/              # Static assets (includes WASM)
 ├── Dockerfile               # Multi-stage build: WASM → Frontend → Backend
-└── docker-compose.yml       # Single-container deployment
+├── docker-compose.yml       # Development deployment
+├── docker-compose.prod.yml  # Production overlay (adds Caddy reverse proxy)
+└── Caddyfile                # Caddy configuration (HTTPS, security headers)
 ```
 
 ## Environment Variables
@@ -79,10 +114,13 @@ Key configuration options (see `.env.example` for full list):
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PORT` | `3030` | HTTP server port |
+| `DOMAIN` | `example.com` | Your domain name (required for production SSL) |
+| `EMAIL` | `you@example.com` | Email for Let's Encrypt notifications |
+| `PORT` | `3030` | HTTP server port (internal when using Caddy) |
+| `BACKEND_LOG_LEVEL` | `info` | Go server logging: `debug`, `info`, `error` |
+| `FRONTEND_LOG_LEVEL` | `error` | Browser console logging: `debug`, `info`, `error` |
 | `EXPIRY_DAYS` | `7` | Days before inactive documents are deleted |
 | `SQLITE_URI` | `./data/kolabpad.db` | Database file path (empty = in-memory only) |
-| `LOG_LEVEL` | `info` | Logging verbosity: `debug`, `info`, `error` |
 | `MAX_DOCUMENT_SIZE_KB` | `256` | Maximum document size in kilobytes |
 
 ## API Endpoints
@@ -140,14 +178,14 @@ make test.frontend
 
 ### Documentation
 
-Comprehensive documentation is available in `dev-internal/docs/`:
+Comprehensive documentation is available in `dev-internals/docs/`:
 
 - **Architecture**: System design, OT algorithm, persistence strategy
 - **Backend**: Server architecture, broadcast system
 - **Frontend**: React architecture, state management, WebSocket integration
 - **Protocol**: WebSocket messages, REST API
 - **Security**: OTP authentication, threat model
-- **Development**: Workflow, testing, deployment
+- **Development**: Workflow, testing, deployment (includes production deployment guide)
 
 ## License
 
