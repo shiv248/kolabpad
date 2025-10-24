@@ -17,12 +17,12 @@ import (
 
 // Document represents a document entry in the server map.
 type Document struct {
-	LastAccessed     time.Time
-	Kolabpad         *Kolabpad
-	persisterCancel  context.CancelFunc // Cancel function to stop persister
-	persisterMu      sync.Mutex         // Protects persister start/stop
-	connectionCount  int                // Number of active connections
-	connectionCountMu sync.Mutex        // Protects connectionCount
+	LastAccessed      time.Time
+	Kolabpad          *Kolabpad
+	persisterCancel   context.CancelFunc // Cancel function to stop persister
+	persisterMu       sync.Mutex         // Protects persister start/stop
+	connectionCount   int                // Number of active connections
+	connectionCountMu sync.Mutex         // Protects connectionCount
 }
 
 // ServerState holds all server-wide state.
@@ -56,9 +56,9 @@ func NewServerState(db *database.Database, maxDocumentSize, broadcastBufferSize 
 
 // Stats represents server statistics.
 type Stats struct {
-	StartTime    int64 `json:"start_time"`     // Unix timestamp
-	NumDocuments int   `json:"num_documents"`  // Active documents
-	DatabaseSize int   `json:"database_size"`  // Documents in database (TODO)
+	StartTime    int64 `json:"start_time"`    // Unix timestamp
+	NumDocuments int   `json:"num_documents"` // Active documents
+	DatabaseSize int   `json:"database_size"` // Documents in database (TODO)
 }
 
 // Server is the main HTTP server.
@@ -425,7 +425,7 @@ func (s *Server) getOrCreateDocument(id string) *Document {
 
 	doc := &Document{
 		LastAccessed: time.Now(),
-		Kolabpad:      kolabpad,
+		Kolabpad:     kolabpad,
 	}
 
 	// Store with LoadOrStore to handle race conditions

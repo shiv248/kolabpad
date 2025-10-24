@@ -14,27 +14,27 @@ import (
 
 // State represents the shared document state protected by a lock.
 type State struct {
-	Operations []protocol.UserOperation     // Complete operation history
-	Text       string                        // Current document text
-	Language   *string                       // Syntax highlighting language
-	OTP        *string                       // One-time password for document protection
-	Users      map[uint64]protocol.UserInfo  // Connected users
+	Operations []protocol.UserOperation       // Complete operation history
+	Text       string                         // Current document text
+	Language   *string                        // Syntax highlighting language
+	OTP        *string                        // One-time password for document protection
+	Users      map[uint64]protocol.UserInfo   // Connected users
 	Cursors    map[uint64]protocol.CursorData // User cursor positions
 }
 
 // Kolabpad is the main collaborative editing session manager.
 type Kolabpad struct {
-	state                *State
-	mu                   sync.RWMutex
-	count                atomic.Uint64                         // User ID counter
-	killed               atomic.Bool                           // Document destruction flag
-	lastEditTime         atomic.Int64                          // Unix timestamp of last edit (for idle detection)
-	lastPersistedRevision atomic.Int32                         // Last revision written to DB
-	lastCriticalWrite    atomic.Int64                          // Unix timestamp of last critical write (OTP changes)
-	subscribers          map[uint64]chan *protocol.ServerMsg  // Per-connection channels for metadata broadcasts
-	notify               chan struct{}                         // Closed to wake all connections when new operations arrive
-	maxDocumentSize      int                                   // Maximum document size in bytes
-	broadcastBufferSize  int                                   // Buffer size for metadata broadcast channels
+	state                 *State
+	mu                    sync.RWMutex
+	count                 atomic.Uint64                       // User ID counter
+	killed                atomic.Bool                         // Document destruction flag
+	lastEditTime          atomic.Int64                        // Unix timestamp of last edit (for idle detection)
+	lastPersistedRevision atomic.Int32                        // Last revision written to DB
+	lastCriticalWrite     atomic.Int64                        // Unix timestamp of last critical write (OTP changes)
+	subscribers           map[uint64]chan *protocol.ServerMsg // Per-connection channels for metadata broadcasts
+	notify                chan struct{}                       // Closed to wake all connections when new operations arrive
+	maxDocumentSize       int                                 // Maximum document size in bytes
+	broadcastBufferSize   int                                 // Buffer size for metadata broadcast channels
 }
 
 // NewKolabpad creates a new collaborative editing session.

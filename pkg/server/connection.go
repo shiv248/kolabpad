@@ -23,7 +23,7 @@ type readResult struct {
 // Connection represents a single client WebSocket connection.
 type Connection struct {
 	userID       uint64
-	kolabpad      *Kolabpad
+	kolabpad     *Kolabpad
 	conn         *websocket.Conn
 	ctx          context.Context
 	cancel       context.CancelFunc
@@ -37,7 +37,7 @@ func NewConnection(kolabpad *Kolabpad, conn *websocket.Conn, readTimeout, writeT
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Connection{
 		userID:       kolabpad.NextUserID(),
-		kolabpad:      kolabpad,
+		kolabpad:     kolabpad,
 		conn:         conn,
 		ctx:          ctx,
 		cancel:       cancel,

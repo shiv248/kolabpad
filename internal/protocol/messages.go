@@ -16,28 +16,28 @@ type UserInfo struct {
 
 // CursorData represents a user's cursor positions and selections.
 type CursorData struct {
-	Cursors    []uint32     `json:"cursors"`    // Cursor positions (Unicode codepoint offsets)
-	Selections [][2]uint32  `json:"selections"` // Selection ranges [start, end]
+	Cursors    []uint32    `json:"cursors"`    // Cursor positions (Unicode codepoint offsets)
+	Selections [][2]uint32 `json:"selections"` // Selection ranges [start, end]
 }
 
 // UserOperation represents an operation with the user ID who created it.
 type UserOperation struct {
-	ID        uint64          `json:"id"`        // User ID
+	ID        uint64           `json:"id"`        // User ID
 	Operation *ot.OperationSeq `json:"operation"` // The OT operation
 }
 
 // ClientMsg represents messages sent from client to server.
 // Only one field should be set per message (tagged union pattern).
 type ClientMsg struct {
-	Edit         *EditMsg      `json:"Edit,omitempty"`
-	SetLanguage  *string       `json:"SetLanguage,omitempty"`
-	ClientInfo   *UserInfo     `json:"ClientInfo,omitempty"`
-	CursorData   *CursorData   `json:"CursorData,omitempty"`
+	Edit        *EditMsg    `json:"Edit,omitempty"`
+	SetLanguage *string     `json:"SetLanguage,omitempty"`
+	ClientInfo  *UserInfo   `json:"ClientInfo,omitempty"`
+	CursorData  *CursorData `json:"CursorData,omitempty"`
 }
 
 // EditMsg represents a text edit operation from the client.
 type EditMsg struct {
-	Revision  int             `json:"revision"`  // Client's current revision
+	Revision  int              `json:"revision"`  // Client's current revision
 	Operation *ot.OperationSeq `json:"operation"` // The edit operation
 }
 
@@ -54,13 +54,13 @@ type ServerMsg struct {
 
 // HistoryMsg sends a batch of operations to the client.
 type HistoryMsg struct {
-	Start      int              `json:"start"`      // Starting revision number
-	Operations []UserOperation  `json:"operations"` // Operations from start to current
+	Start      int             `json:"start"`      // Starting revision number
+	Operations []UserOperation `json:"operations"` // Operations from start to current
 }
 
 // UserInfoMsg broadcasts user connection/disconnection events.
 type UserInfoMsg struct {
-	ID   uint64    `json:"id"`            // User ID
+	ID   uint64    `json:"id"`             // User ID
 	Info *UserInfo `json:"info,omitempty"` // User info, or nil if disconnected
 }
 
@@ -72,8 +72,8 @@ type UserCursorMsg struct {
 
 // LanguageMsg broadcasts language changes to all clients.
 type LanguageMsg struct {
-	Language string `json:"language"` // New language
-	UserID   uint64 `json:"user_id"`  // User who made the change
+	Language string `json:"language"`  // New language
+	UserID   uint64 `json:"user_id"`   // User who made the change
 	UserName string `json:"user_name"` // User's display name
 }
 

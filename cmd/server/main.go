@@ -17,14 +17,14 @@ import (
 
 // Config holds all server configuration
 type Config struct {
-	Port                  string
-	ExpiryDays            int
-	SQLiteURI             string
-	CleanupInterval       time.Duration
-	MaxDocumentSize       int
-	WSReadTimeout         time.Duration
-	WSWriteTimeout        time.Duration
-	BroadcastBufferSize   int
+	Port                string
+	ExpiryDays          int
+	SQLiteURI           string
+	CleanupInterval     time.Duration
+	MaxDocumentSize     int
+	WSReadTimeout       time.Duration
+	WSWriteTimeout      time.Duration
+	BroadcastBufferSize int
 }
 
 func main() {
