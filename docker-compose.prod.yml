@@ -2,7 +2,7 @@
 # Production overlay for docker-compose.yml
 #
 # Usage:
-#   export DOMAIN=kolabpad.com
+#   export DOMAIN=domain.com
 #   export EMAIL=you@example.com
 #   docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 #

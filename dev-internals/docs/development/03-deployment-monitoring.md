@@ -128,7 +128,7 @@ Internet
 Environment variables for production:
 
 ```bash
-✓ DOMAIN=yourdomain.com                      # Required for Caddy/SSL
+✓ DOMAIN=domain.com                          # Required for Caddy/SSL
 ✓ EMAIL=you@example.com                      # Required for Let's Encrypt
 ✓ PORT=3030                                   # Internal port (Caddy proxies to this)
 ✓ BACKEND_LOG_LEVEL=info                     # Go server logs (not debug - too verbose)
@@ -205,7 +205,7 @@ Internet (port 443/80)
 - `Caddyfile` - Caddy configuration (reads DOMAIN and EMAIL from env)
 
 **Environment requirements**:
-- `DOMAIN`: Your domain name (e.g., kolabpad.com)
+- `DOMAIN`: Your domain name (e.g., domain.com)
 - `EMAIL`: Email for Let's Encrypt notifications
 - DNS must point to your server IP
 
