@@ -89,8 +89,8 @@ function DocumentEditor() {
       const model = editor.getModel()!;
       const range = model.getFullModelRange();
 
-      // If there are at least 10 lines of code, ask for confirmation.
-      if (range.endLineNumber >= 10 && !confirmed) {
+      // If there are at least 5 lines of code, ask for confirmation.
+      if (range.endLineNumber >= 5 && !confirmed) {
         setReadCodeConfirmOpen(true);
         return;
       }
