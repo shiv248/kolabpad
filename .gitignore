@@ -59,3 +59,5 @@ data/
 .env
 .env.local
 
+# Coverage reports
+coverage.html
