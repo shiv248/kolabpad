@@ -1,8 +1,8 @@
-.PHONY: help setup install build run test clean \
-        install.frontend build.frontend run.frontend test.frontend clean.frontend \
+.PHONY: help setup install build run tests clean \
+        install.frontend build.frontend run.frontend tests.frontend clean.frontend \
         wasm-build dev-backend dev-frontend \
         docker-up docker-down docker-restart docker-restart.debug docker-clean docker-logs \
-        lint lint.frontend format format.frontend
+        lint lint.frontend format.frontend
 
 # Variables
 BINARY_NAME=kolabpad-server
@@ -27,8 +27,11 @@ help:  ## Show this help message
 	@echo "Build:"
 	@grep -hE '^build.*:.*?## .*$$' $(MAKEFILE_LIST) | sed 's/:.*## /|/' | awk -F'|' '{printf "  \033[36m%-25s\033[0m %s\n", $$1, $$2}'
 	@echo ""
-	@echo "Testing & Quality:"
-	@grep -hE '^(test|lint|format).*:.*?## .*$$' $(MAKEFILE_LIST) | sed 's/:.*## /|/' | awk -F'|' '{printf "  \033[36m%-25s\033[0m %s\n", $$1, $$2}'
+	@echo "Testing:"
+	@grep -hE '^tests.*:.*?## .*$$' $(MAKEFILE_LIST) | sed 's/:.*## /|/' | awk -F'|' '{printf "  \033[36m%-25s\033[0m %s\n", $$1, $$2}'
+	@echo ""
+	@echo "Quality:"
+	@grep -hE '^(lint|format).*:.*?## .*$$' $(MAKEFILE_LIST) | sed 's/:.*## /|/' | awk -F'|' '{printf "  \033[36m%-25s\033[0m %s\n", $$1, $$2}'
 	@echo ""
 	@echo "Cleanup:"
 	@grep -hE '^clean.*:.*?## .*$$' $(MAKEFILE_LIST) | sed 's/:.*## /|/' | awk -F'|' '{printf "  \033[36m%-25s\033[0m %s\n", $$1, $$2}'
@@ -80,10 +83,10 @@ build:  ## Build backend server binary
 run: check-env
 	@set -a && . ./.env && set +a && ./$(BIN_DIR)/$(BINARY_NAME)
 
-test:  ## Run backend tests
+tests:  ## Run backend tests
 	go test -v ./...
 
-test.coverage:  ## Run backend tests with coverage
+tests.coverage:  ## Run backend tests with coverage
 	go test -v -coverprofile=coverage.out ./...
 	go tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report: coverage.html"
@@ -107,17 +110,11 @@ build.frontend:  ## Build frontend for production
 run.frontend:
 	cd $(FRONTEND_DIR) && npm run dev
 
-test.frontend:  ## Run frontend tests
+tests.frontend:  ## Run frontend tests
 	cd $(FRONTEND_DIR) && npm test
 
-test.frontend.coverage:  ## Run frontend tests with coverage
+tests.frontend.coverage:  ## Run frontend tests with coverage
 	cd $(FRONTEND_DIR) && npm run test:coverage
-
-lint.frontend:  ## Lint frontend code
-	cd $(FRONTEND_DIR) && npm run lint
-
-format.frontend:  ## Format frontend code
-	cd $(FRONTEND_DIR) && npm run format
 
 clean.frontend:  ## Clean frontend build artifacts
 	rm -rf $(FRONTEND_DIR)/dist
@@ -214,6 +211,12 @@ lint:  ## Lint and format Go code
 	go vet ./...
 	go fmt ./...
 
+lint.frontend:  ## Lint frontend code
+	cd $(FRONTEND_DIR) && npm run lint
+
+format.frontend:  ## Format frontend code
+	cd $(FRONTEND_DIR) && npm run format
+
 ###################
 # Combined targets #
 ###################
@@ -227,9 +230,9 @@ build.all:  ## Build everything (WASM + backend + frontend)
 	@$(MAKE) -s build
 	@$(MAKE) -s build.frontend
 
-test.all:  ## Run all tests (backend + frontend)
-	@$(MAKE) test
-	@$(MAKE) test.frontend
+tests.all:  ## Run all tests (backend + frontend)
+	@$(MAKE) tests
+	@$(MAKE) tests.frontend
 
 clean.all:  ## Clean all build artifacts
 	@$(MAKE) clean
