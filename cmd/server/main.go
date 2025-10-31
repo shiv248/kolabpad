@@ -17,14 +17,15 @@ import (
 
 // Config holds all server configuration
 type Config struct {
-	Port                string
-	ExpiryDays          int
-	SQLiteURI           string
-	CleanupInterval     time.Duration
-	MaxDocumentSize     int
-	WSReadTimeout       time.Duration
-	WSWriteTimeout      time.Duration
-	BroadcastBufferSize int
+	Port                 string
+	ExpiryDays           int
+	SQLiteURI            string
+	CleanupInterval      time.Duration
+	MaxDocumentSize      int
+	WSReadTimeout        time.Duration
+	WSWriteTimeout       time.Duration
+	WSHeartbeatInterval  time.Duration
+	BroadcastBufferSize  int
 }
 
 func main() {
@@ -33,14 +34,15 @@ func main() {
 
 	// Load configuration from environment
 	config := Config{
-		Port:                getEnv("PORT", "3030"),
-		ExpiryDays:          getEnvInt("EXPIRY_DAYS", 7),
-		SQLiteURI:           os.Getenv("SQLITE_URI"),
-		CleanupInterval:     time.Duration(getEnvInt("CLEANUP_INTERVAL_HOURS", 1)) * time.Hour,
-		MaxDocumentSize:     getEnvInt("MAX_DOCUMENT_SIZE_KB", 256) * 1024, // Convert KB to bytes
-		WSReadTimeout:       time.Duration(getEnvInt("WS_READ_TIMEOUT_MINUTES", 30)) * time.Minute,
-		WSWriteTimeout:      time.Duration(getEnvInt("WS_WRITE_TIMEOUT_SECONDS", 10)) * time.Second,
-		BroadcastBufferSize: getEnvInt("BROADCAST_BUFFER_SIZE", 16),
+		Port:                 getEnv("PORT", "3030"),
+		ExpiryDays:           getEnvInt("EXPIRY_DAYS", 7),
+		SQLiteURI:            os.Getenv("SQLITE_URI"),
+		CleanupInterval:      time.Duration(getEnvInt("CLEANUP_INTERVAL_HOURS", 1)) * time.Hour,
+		MaxDocumentSize:      getEnvInt("MAX_DOCUMENT_SIZE_KB", 256) * 1024, // Convert KB to bytes
+		WSReadTimeout:        time.Duration(getEnvInt("WS_READ_TIMEOUT_MINUTES", 30)) * time.Minute,
+		WSWriteTimeout:       time.Duration(getEnvInt("WS_WRITE_TIMEOUT_SECONDS", 10)) * time.Second,
+		WSHeartbeatInterval:  time.Duration(getEnvInt("WS_HEARTBEAT_INTERVAL_SECONDS", 60)) * time.Second,
+		BroadcastBufferSize:  getEnvInt("BROADCAST_BUFFER_SIZE", 16),
 	}
 
 	logger.Info("Starting Kolabpad server...")
@@ -63,7 +65,7 @@ func main() {
 	}
 
 	// Create server with config
-	srv := server.NewServer(db, config.MaxDocumentSize, config.BroadcastBufferSize, config.WSReadTimeout, config.WSWriteTimeout)
+	srv := server.NewServer(db, config.MaxDocumentSize, config.BroadcastBufferSize, config.WSReadTimeout, config.WSWriteTimeout, config.WSHeartbeatInterval)
 
 	// Start cleanup task
 	ctx, cancel := context.WithCancel(context.Background())

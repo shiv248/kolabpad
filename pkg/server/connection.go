@@ -22,27 +22,29 @@ type readResult struct {
 
 // Connection represents a single client WebSocket connection.
 type Connection struct {
-	userID       uint64
-	kolabpad     *Kolabpad
-	conn         *websocket.Conn
-	ctx          context.Context
-	cancel       context.CancelFunc
-	sendMu       sync.Mutex
-	readTimeout  time.Duration
-	writeTimeout time.Duration
+	userID            uint64
+	kolabpad          *Kolabpad
+	conn              *websocket.Conn
+	ctx               context.Context
+	cancel            context.CancelFunc
+	sendMu            sync.Mutex
+	readTimeout       time.Duration
+	writeTimeout      time.Duration
+	heartbeatInterval time.Duration
 }
 
 // NewConnection creates a new client connection handler.
-func NewConnection(kolabpad *Kolabpad, conn *websocket.Conn, readTimeout, writeTimeout time.Duration) *Connection {
+func NewConnection(kolabpad *Kolabpad, conn *websocket.Conn, readTimeout, writeTimeout, heartbeatInterval time.Duration) *Connection {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Connection{
-		userID:       kolabpad.NextUserID(),
-		kolabpad:     kolabpad,
-		conn:         conn,
-		ctx:          ctx,
-		cancel:       cancel,
-		readTimeout:  readTimeout,
-		writeTimeout: writeTimeout,
+		userID:            kolabpad.NextUserID(),
+		kolabpad:          kolabpad,
+		conn:              conn,
+		ctx:               ctx,
+		cancel:            cancel,
+		readTimeout:       readTimeout,
+		writeTimeout:      writeTimeout,
+		heartbeatInterval: heartbeatInterval,
 	}
 }
 
@@ -68,6 +70,11 @@ func (c *Connection) Handle(ctx context.Context) error {
 	// Start update broadcaster
 	updatesDone := make(chan struct{})
 	go c.broadcastUpdates(updates, updatesDone)
+
+	// Start heartbeat to keep connection alive through proxies
+	if c.heartbeatInterval > 0 {
+		go c.heartbeat(ctx)
+	}
 
 	// Start first read
 	readChan := make(chan readResult, 1)
@@ -316,4 +323,37 @@ func (c *Connection) getUserName() string {
 		return userInfo.Name
 	}
 	return ""
+}
+
+// heartbeat sends periodic WebSocket ping frames to keep the connection alive.
+// This prevents proxy servers (like Cloudflare) from closing idle connections.
+// The browser automatically responds with pong frames.
+func (c *Connection) heartbeat(ctx context.Context) {
+	ticker := time.NewTicker(c.heartbeatInterval)
+	defer ticker.Stop()
+
+	logger.Debug("User %d heartbeat started (interval: %v)", c.userID, c.heartbeatInterval)
+
+	for {
+		select {
+		case <-ctx.Done():
+			logger.Debug("User %d heartbeat stopped (context done)", c.userID)
+			return
+		case <-c.ctx.Done():
+			logger.Debug("User %d heartbeat stopped (connection closed)", c.userID)
+			return
+		case <-ticker.C:
+			// Send native WebSocket ping frame
+			pingCtx, pingCancel := context.WithTimeout(c.ctx, c.writeTimeout)
+			err := c.conn.Ping(pingCtx)
+			pingCancel()
+
+			if err != nil {
+				logger.Debug("User %d heartbeat ping failed: %v", c.userID, err)
+				c.cancel() // Cancel connection context to trigger cleanup
+				return
+			}
+			logger.Debug("User %d heartbeat ping sent", c.userID)
+		}
+	}
 }

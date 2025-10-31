@@ -35,10 +35,11 @@ type ServerState struct {
 	broadcastBufferSize int
 	wsReadTimeout       time.Duration
 	wsWriteTimeout      time.Duration
+	wsHeartbeatInterval time.Duration
 }
 
 // NewServerState creates a new server state.
-func NewServerState(db *database.Database, maxDocumentSize, broadcastBufferSize int, wsReadTimeout, wsWriteTimeout time.Duration) *ServerState {
+func NewServerState(db *database.Database, maxDocumentSize, broadcastBufferSize int, wsReadTimeout, wsWriteTimeout, wsHeartbeatInterval time.Duration) *ServerState {
 	// Set message size limit to document size + 64KB overhead for JSON encoding
 	const overheadBytes = 64 * 1024
 	maxMessageSize := int64(maxDocumentSize + overheadBytes)
@@ -51,6 +52,7 @@ func NewServerState(db *database.Database, maxDocumentSize, broadcastBufferSize 
 		broadcastBufferSize: broadcastBufferSize,
 		wsReadTimeout:       wsReadTimeout,
 		wsWriteTimeout:      wsWriteTimeout,
+		wsHeartbeatInterval: wsHeartbeatInterval,
 	}
 }
 
@@ -68,9 +70,9 @@ type Server struct {
 }
 
 // NewServer creates a new HTTP server.
-func NewServer(db *database.Database, maxDocumentSize, broadcastBufferSize int, wsReadTimeout, wsWriteTimeout time.Duration) *Server {
+func NewServer(db *database.Database, maxDocumentSize, broadcastBufferSize int, wsReadTimeout, wsWriteTimeout, wsHeartbeatInterval time.Duration) *Server {
 	s := &Server{
-		state: NewServerState(db, maxDocumentSize, broadcastBufferSize, wsReadTimeout, wsWriteTimeout),
+		state: NewServerState(db, maxDocumentSize, broadcastBufferSize, wsReadTimeout, wsWriteTimeout, wsHeartbeatInterval),
 		mux:   http.NewServeMux(),
 	}
 
@@ -203,7 +205,7 @@ func (s *Server) handleSocket(w http.ResponseWriter, r *http.Request) {
 	conn.SetReadLimit(s.state.maxMessageSize)
 
 	// Handle connection
-	connHandler := NewConnection(doc.Kolabpad, conn, s.state.wsReadTimeout, s.state.wsWriteTimeout)
+	connHandler := NewConnection(doc.Kolabpad, conn, s.state.wsReadTimeout, s.state.wsWriteTimeout, s.state.wsHeartbeatInterval)
 	_ = connHandler.Handle(r.Context())
 
 	conn.Close(websocket.StatusNormalClosure, "")

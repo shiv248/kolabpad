@@ -35,8 +35,9 @@ func testServer(t *testing.T) *Server {
 	const broadcastBufferSize = 256
 	const wsReadTimeout = 5 * time.Minute
 	const wsWriteTimeout = 5 * time.Second
+	const wsHeartbeatInterval = 60 * time.Second
 
-	return NewServer(db, maxDocumentSize, broadcastBufferSize, wsReadTimeout, wsWriteTimeout)
+	return NewServer(db, maxDocumentSize, broadcastBufferSize, wsReadTimeout, wsWriteTimeout, wsHeartbeatInterval)
 }
 
 // testServerNoDb creates a test server without a database.
@@ -48,8 +49,9 @@ func testServerNoDb(t *testing.T) *Server {
 	const broadcastBufferSize = 256
 	const wsReadTimeout = 5 * time.Minute
 	const wsWriteTimeout = 5 * time.Second
+	const wsHeartbeatInterval = 60 * time.Second
 
-	return NewServer(nil, maxDocumentSize, broadcastBufferSize, wsReadTimeout, wsWriteTimeout)
+	return NewServer(nil, maxDocumentSize, broadcastBufferSize, wsReadTimeout, wsWriteTimeout, wsHeartbeatInterval)
 }
 
 // connectWebSocket establishes a WebSocket connection to a test server.
