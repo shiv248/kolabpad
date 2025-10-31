@@ -11,6 +11,7 @@ type LogLevel int
 
 const (
 	LevelError LogLevel = iota
+	LevelWarn
 	LevelInfo
 	LevelDebug
 )
@@ -25,6 +26,8 @@ func Init() {
 		currentLevel = LevelDebug
 	case "info":
 		currentLevel = LevelInfo
+	case "warn":
+		currentLevel = LevelWarn
 	case "error":
 		currentLevel = LevelError
 	default:
@@ -43,6 +46,13 @@ func Debug(format string, v ...interface{}) {
 func Info(format string, v ...interface{}) {
 	if currentLevel >= LevelInfo {
 		log.Printf("[INFO] "+format, v...)
+	}
+}
+
+// Warn logs a warning message (if LOG_LEVEL=warn, info, or debug)
+func Warn(format string, v ...interface{}) {
+	if currentLevel >= LevelWarn {
+		log.Printf("[WARN] "+format, v...)
 	}
 }
 

@@ -48,14 +48,18 @@ func NewConnection(kolabpad *Kolabpad, conn *websocket.Conn, readTimeout, writeT
 
 // Handle manages the WebSocket connection lifecycle.
 func (c *Connection) Handle(ctx context.Context) error {
-	defer c.cleanup()
+	var handleErr error
+	defer func() {
+		c.cleanup(handleErr)
+	}()
 
 	logger.Info("User %d connected", c.userID)
 
 	// Send initial state to client
 	revision, err := c.sendInitial()
 	if err != nil {
-		return fmt.Errorf("send initial: %w", err)
+		handleErr = fmt.Errorf("send initial: %w", err)
+		return handleErr
 	}
 
 	// Subscribe to metadata updates
@@ -83,16 +87,19 @@ func (c *Connection) Handle(ctx context.Context) error {
 		if c.kolabpad.Revision() > revision {
 			newRev, err := c.sendHistory(revision)
 			if err != nil {
-				return fmt.Errorf("send history: %w", err)
+				handleErr = fmt.Errorf("send history: %w", err)
+				return handleErr
 			}
 			revision = newRev
 		}
 
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			handleErr = ctx.Err()
+			return handleErr
 		case <-c.ctx.Done():
-			return c.ctx.Err()
+			handleErr = c.ctx.Err()
+			return handleErr
 		case <-notified:
 			// Notify channel closed, new operation available - loop to check revision
 		case result := <-readChan:
@@ -102,13 +109,15 @@ func (c *Connection) Handle(ctx context.Context) error {
 				if status == websocket.StatusNormalClosure || status == websocket.StatusGoingAway {
 					return nil
 				}
-				return fmt.Errorf("read message: %w", result.err)
+				handleErr = fmt.Errorf("read message: %w", result.err)
+				return handleErr
 			}
 
 			// Handle message
 			if err := c.handleMessage(&result.msg); err != nil {
 				logger.Error("Error handling message from user %d: %v", c.userID, err)
-				return err
+				handleErr = err
+				return handleErr
 			}
 
 			// Start next read
@@ -280,8 +289,19 @@ func (c *Connection) send(msg *protocol.ServerMsg) error {
 }
 
 // cleanup removes the user from the session.
-func (c *Connection) cleanup() {
-	logger.Info("User %d disconnected", c.userID)
+func (c *Connection) cleanup(err error) {
+	if err != nil {
+		// Check if it's a normal close
+		status := websocket.CloseStatus(err)
+		if status == websocket.StatusNormalClosure || status == websocket.StatusGoingAway {
+			logger.Info("User %d disconnected", c.userID)
+		} else {
+			logger.Warn("User %d disconnected forcefully", c.userID)
+			logger.Error("Disconnect reason: %v", err)
+		}
+	} else {
+		logger.Info("User %d disconnected", c.userID)
+	}
 	c.kolabpad.RemoveUser(c.userID)
 	c.cancel()
 }

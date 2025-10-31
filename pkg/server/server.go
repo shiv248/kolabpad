@@ -204,9 +204,7 @@ func (s *Server) handleSocket(w http.ResponseWriter, r *http.Request) {
 
 	// Handle connection
 	connHandler := NewConnection(doc.Kolabpad, conn, s.state.wsReadTimeout, s.state.wsWriteTimeout)
-	if err := connHandler.Handle(r.Context()); err != nil {
-		logger.Error("Connection error: %v", err)
-	}
+	_ = connHandler.Handle(r.Context())
 
 	conn.Close(websocket.StatusNormalClosure, "")
 }
