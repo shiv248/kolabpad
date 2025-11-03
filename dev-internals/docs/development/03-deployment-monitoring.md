@@ -137,8 +137,9 @@ Environment variables for production:
 ✓ SQLITE_URI=/data/kolabpad.db               # Persistent volume path
 ✓ CLEANUP_INTERVAL_HOURS=1                   # Default is fine
 ✓ MAX_DOCUMENT_SIZE_KB=256                   # Prevent abuse
-✓ WS_READ_TIMEOUT_MINUTES=30                 # Disconnect idle clients
+✓ WS_READ_TIMEOUT_MINUTES=30                 # Disconnect zombie connections
 ✓ WS_WRITE_TIMEOUT_SECONDS=10                # Disconnect slow clients
+✓ WS_HEARTBEAT_INTERVAL_SECONDS=60           # Keep connections alive through proxies
 ✓ BROADCAST_BUFFER_SIZE=16                   # Default is fine
 ```
 
@@ -1135,38 +1136,139 @@ db.SetMaxIdleConns(5)
 
 ### WebSocket Connection Drops
 
-**Symptom**: Users frequently disconnected and reconnected
+**Symptom**: Users frequently disconnected and reconnected, especially after idle periods
 
 **Diagnosis**:
 
 ```bash
+# Check heartbeat configuration (IMPLEMENTED - should be enabled)
+echo $WS_HEARTBEAT_INTERVAL_SECONDS  # Should be 60
+
 # Check timeout configuration
-echo $WS_READ_TIMEOUT_MINUTES    # Should be 30
-echo $WS_WRITE_TIMEOUT_SECONDS   # Should be 10
+echo $WS_READ_TIMEOUT_MINUTES        # Should be 30
+echo $WS_WRITE_TIMEOUT_SECONDS       # Should be 10
 
-# Check logs for timeout messages
-journalctl -u kolabpad | grep "timeout"
+# Check logs for connection errors
+journalctl -u kolabpad | grep "EOF"                    # Cloudflare proxy closures
+journalctl -u kolabpad | grep "disconnected forcefully" # Abnormal disconnects
+journalctl -u kolabpad | grep "heartbeat"              # Debug heartbeat activity
 
-# Check network path (proxies, load balancer)
-# Some proxies terminate idle WebSockets after 1 min
+# Check if heartbeat pings are working (set BACKEND_LOG_LEVEL=debug)
+docker-compose logs | grep "heartbeat ping sent"
+
+# Verify proxy/CDN in front of server
+curl -I https://yourdomain.com  # Check for cf-ray (Cloudflare) or similar headers
 ```
+
+**Common Causes**:
+
+1. **Cloudflare or reverse proxy idle timeout** (100 seconds):
+   - Proxy closes idle WebSocket connections
+   - Most common issue with production deployments
+   - ✅ **SOLVED**: Native WebSocket heartbeat implemented (sends ping every 60s)
+
+2. **Network instability**:
+   - Mobile users switching networks
+   - WiFi drops
+   - Not preventable, but auto-reconnection handles it
+
+3. **Server-side timeout**:
+   - `WS_READ_TIMEOUT` too aggressive
+   - With heartbeat, this should never trigger (timeout resets on ping)
 
 **Solutions**:
 
-1. **WebSocket ping/pong** (keep-alive):
-   - Client sends periodic ping (every 20s)
-   - Server responds with pong
-   - Prevents idle timeout
+1. **✅ Heartbeat is Already Implemented** (default enabled):
+   ```bash
+   # Verify heartbeat is configured
+   echo $WS_HEARTBEAT_INTERVAL_SECONDS  # Should output: 60
 
-2. **Increase timeout** (if too aggressive):
+   # Default configuration (works for Cloudflare):
+   WS_HEARTBEAT_INTERVAL_SECONDS=60
+   ```
 
-```bash
-WS_READ_TIMEOUT_MINUTES=60  # Allow 1 hour idle
-```
+2. **Adjust heartbeat interval if needed**:
 
-3. **Load balancer configuration**:
-   - Increase WebSocket idle timeout (if behind proxy)
-   - Enable WebSocket support explicitly
+   **More aggressive** (if proxy timeout < 100s):
+   ```bash
+   WS_HEARTBEAT_INTERVAL_SECONDS=30  # Send ping every 30 seconds
+   ```
+
+   **Less overhead** (if no proxy timeout issues):
+   ```bash
+   WS_HEARTBEAT_INTERVAL_SECONDS=90  # Send ping every 90 seconds
+   ```
+
+   **Disable** (not recommended for production):
+   ```bash
+   WS_HEARTBEAT_INTERVAL_SECONDS=0  # Disables heartbeat
+   ```
+
+3. **Verify heartbeat is working**:
+
+   Enable debug logging temporarily:
+   ```bash
+   BACKEND_LOG_LEVEL=debug
+   docker-compose restart kolabpad-api
+   ```
+
+   Watch for heartbeat logs:
+   ```bash
+   docker-compose logs -f kolabpad-api | grep heartbeat
+
+   # Should see (every 60 seconds per user):
+   # [DEBUG] User 0 heartbeat started (interval: 1m0s)
+   # [DEBUG] User 0 heartbeat ping sent
+   # [DEBUG] User 0 heartbeat ping sent
+   ```
+
+   Set back to info level after verification:
+   ```bash
+   BACKEND_LOG_LEVEL=info
+   docker-compose restart kolabpad-api
+   ```
+
+4. **Increase read timeout** (if seeing zombie connections):
+
+   Only needed if legitimate connections are being killed:
+   ```bash
+   WS_READ_TIMEOUT_MINUTES=60  # Allow 1 hour idle (heartbeat keeps it alive)
+   ```
+
+5. **Proxy/CDN configuration**:
+
+   **Cloudflare** (most common):
+   - ✅ Heartbeat already handles Cloudflare's 100s timeout
+   - No additional configuration needed
+   - Cloudflare automatically supports WebSocket ping/pong
+
+   **Custom reverse proxy** (nginx, Caddy, etc.):
+   ```nginx
+   # Nginx example
+   location /api/socket/ {
+       proxy_pass http://backend;
+       proxy_http_version 1.1;
+       proxy_set_header Upgrade $http_upgrade;
+       proxy_set_header Connection "upgrade";
+       proxy_read_timeout 3600s;  # Long timeout, heartbeat keeps connection alive
+       proxy_send_timeout 3600s;
+   }
+   ```
+
+**Expected Behavior**:
+
+- **With heartbeat enabled**: Connections stay alive indefinitely during idle periods
+- **Without heartbeat**: Cloudflare closes connection after 100 seconds of no activity
+- **Logs** (info level): You should **not** see frequent `EOF` or `disconnected forcefully` messages during idle periods
+- **Debug logs**: Shows heartbeat pings every 60 seconds per active connection
+
+**Still having issues?**
+
+If connections still drop after verifying heartbeat:
+1. Check if reverse proxy is stripping WebSocket control frames (rare)
+2. Verify `WS_HEARTBEAT_INTERVAL_SECONDS` < proxy timeout
+3. Test without Cloudflare/proxy to isolate issue
+4. Check for network-level issues (firewalls, NAT timeout)
 
 ---
 

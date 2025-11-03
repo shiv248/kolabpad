@@ -357,6 +357,14 @@ With lazy persistence:
 - **Cursor updates**: Debounced to 20ms intervals client-side
 - **Typical round-trip**: <100ms for most users
 
+### Connection Keepalive
+
+- **Heartbeat mechanism**: Native WebSocket ping/pong frames
+- **Ping interval**: 60 seconds (configurable via `WS_HEARTBEAT_INTERVAL_SECONDS`)
+- **Purpose**: Prevents Cloudflare and reverse proxies from closing idle connections (typical 100s timeout)
+- **Overhead**: ~12 bytes/minute per connection (6 bytes ping + 6 bytes pong)
+- **Implementation**: Server-side only, browser automatically responds per WebSocket spec
+
 ---
 
 ## Deployment Model

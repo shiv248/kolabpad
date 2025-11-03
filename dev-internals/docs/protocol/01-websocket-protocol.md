@@ -832,6 +832,94 @@ ON successful reconnect:
 - Client detects if revision jumps unexpectedly
 - Trigger: full page reload to resync
 
+### Heartbeat Mechanism
+
+**Purpose**: Keep WebSocket connections alive through proxies and prevent idle connection timeouts.
+
+**The Problem**:
+- Cloudflare and many reverse proxies close idle WebSocket connections after 100 seconds
+- Users who open a document and don't type for 2 minutes get disconnected
+- This causes unnecessary reconnection overhead and poor user experience
+
+**The Solution - Native WebSocket Ping/Pong**:
+
+```pseudocode
+SERVER (per connection):
+    EVERY 60 seconds:
+        Send native WebSocket ping frame
+
+    IF ping fails:
+        Connection is dead, trigger cleanup
+
+BROWSER (automatic):
+    ON receive ping frame:
+        Automatically respond with pong frame
+        (No JavaScript code needed)
+```
+
+**Implementation Details**:
+- Uses native WebSocket control frames (not application-level JSON messages)
+- Server sends ping frames every 60 seconds (configurable)
+- Browser automatically responds with pong frames per WebSocket protocol spec
+- Each ping/pong resets the `WS_READ_TIMEOUT` timer on the server
+- No client-side code changes required
+
+**Configuration**:
+```bash
+# Default: 60 seconds (comfortably under Cloudflare's 100s timeout)
+WS_HEARTBEAT_INTERVAL_SECONDS=60
+
+# More aggressive (if proxy timeout < 100s)
+WS_HEARTBEAT_INTERVAL_SECONDS=30
+
+# Less overhead (if no proxy timeout issues)
+WS_HEARTBEAT_INTERVAL_SECONDS=90
+
+# Disable (not recommended for production)
+WS_HEARTBEAT_INTERVAL_SECONDS=0
+```
+
+**Why 60 Seconds?**
+- Cloudflare closes idle connections after 100 seconds
+- 60-second interval provides safe buffer (40s margin)
+- Minimal overhead: 1 ping per minute per connection
+- Typical WebSocket frame: ~6 bytes (ping) + ~6 bytes (pong) = 12 bytes/minute
+
+**Interaction with Timeouts**:
+- `WS_READ_TIMEOUT` (default: 30 minutes): Timer resets on every message including pings
+- `WS_WRITE_TIMEOUT` (default: 10 seconds): Applied to each ping send operation
+- With heartbeat working, read timeout becomes a safety net for catastrophic failures
+
+**Visibility in Logs**:
+```bash
+# Debug mode shows heartbeat activity
+BACKEND_LOG_LEVEL=debug
+
+# Logs:
+# [DEBUG] User 0 heartbeat started (interval: 1m0s)
+# [DEBUG] User 0 heartbeat ping sent
+# [DEBUG] User 0 heartbeat ping failed: context canceled
+# [DEBUG] User 0 heartbeat stopped (connection closed)
+```
+
+**Why Native Ping/Pong vs Application-Level Messages**:
+
+| Approach | Native WebSocket Ping/Pong | Application-Level (JSON) |
+|----------|---------------------------|--------------------------|
+| Overhead | ~12 bytes/min | ~50 bytes/min |
+| Protocol | WebSocket standard | Custom protocol |
+| Client code | None (automatic) | Must implement handler |
+| Visibility | Debug logs only | Visible in protocol |
+| Proxy compatibility | Excellent | May be filtered |
+
+**Troubleshooting**:
+
+If connections still drop after 100 seconds:
+1. Check heartbeat is enabled: `echo $WS_HEARTBEAT_INTERVAL_SECONDS`
+2. Verify interval < proxy timeout (e.g., 60s < 100s)
+3. Check logs for ping failures: `journalctl -u kolabpad | grep heartbeat`
+4. Some proxies may strip WebSocket control frames (rare)
+
 ---
 
 ## Performance Considerations

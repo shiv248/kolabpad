@@ -102,14 +102,15 @@ FUNCTION main():
 **Configuration via Environment Variables**:
 
 ```bash
-PORT=3030                      # HTTP server port
-EXPIRY_DAYS=7                  # Document expiry after last access
-SQLITE_URI=./data/kolabpad.db  # Database file path (optional)
-CLEANUP_INTERVAL_HOURS=1       # How often to run cleanup
-MAX_DOCUMENT_SIZE_KB=256       # Maximum document size (in KB)
-WS_READ_TIMEOUT_MINUTES=30     # WebSocket read timeout
-WS_WRITE_TIMEOUT_SECONDS=10    # WebSocket write timeout
-BROADCAST_BUFFER_SIZE=16       # Channel buffer for broadcasts
+PORT=3030                        # HTTP server port
+EXPIRY_DAYS=7                    # Document expiry after last access
+SQLITE_URI=./data/kolabpad.db    # Database file path (optional)
+CLEANUP_INTERVAL_HOURS=1         # How often to run cleanup
+MAX_DOCUMENT_SIZE_KB=256         # Maximum document size (in KB)
+WS_READ_TIMEOUT_MINUTES=30       # WebSocket read timeout
+WS_WRITE_TIMEOUT_SECONDS=10      # WebSocket write timeout
+WS_HEARTBEAT_INTERVAL_SECONDS=60 # WebSocket ping interval for keepalive
+BROADCAST_BUFFER_SIZE=16         # Channel buffer for broadcasts
 ```
 
 **Design Decision**: We use environment variables for configuration instead of config files because it's simpler for containerized deployments (Docker, Kubernetes) and follows the [12-factor app methodology](https://12factor.net/config).
@@ -603,6 +604,99 @@ CONNECTION LOOP:
 **Why Close-and-Recreate?**
 
 Closing a channel wakes all goroutines waiting on `<-chan`. This is Go's idiomatic pattern for waking multiple goroutines. The alternative (sending to N channels) would require knowing all connections and would be slower.
+
+### Heartbeat Goroutines
+
+Each WebSocket connection runs a dedicated heartbeat goroutine to keep the connection alive through proxies.
+
+**Per-Connection Heartbeat**:
+```pseudocode
+FUNCTION heartbeat(connection, heartbeatInterval):
+    ticker = CreateTicker(heartbeatInterval)  // Default: 60 seconds
+    defer ticker.Stop()
+
+    LOOP:
+        SELECT:
+            CASE <-ticker.C:
+                // Send native WebSocket ping frame
+                pingContext = CreateTimeoutContext(writeTimeout)
+                err = connection.Ping(pingContext)
+
+                IF err != nil:
+                    // Connection broken or unresponsive
+                    LOG_DEBUG "Heartbeat ping failed: %v", err
+                    connection.Cancel()  // Trigger cleanup
+                    RETURN
+
+                LOG_DEBUG "Heartbeat ping sent"
+
+            CASE <-connectionContext.Done():
+                // Connection closed normally
+                LOG_DEBUG "Heartbeat stopped (connection closed)"
+                RETURN
+
+            CASE <-serverContext.Done():
+                // Server shutting down
+                LOG_DEBUG "Heartbeat stopped (server shutdown)"
+                RETURN
+```
+
+**Implementation Details**:
+- **Native WebSocket Frames**: Uses WebSocket protocol's ping/pong control frames (not application JSON messages)
+- **Browser Automatic Response**: Browsers automatically respond to ping frames with pong frames per WebSocket spec (RFC 6455)
+- **No Client Code Needed**: No JavaScript changes required; it's handled by the browser's WebSocket implementation
+- **Independent Timing**: Each connection has its own ticker to avoid synchronized "thundering herd" pings
+- **Graceful Cleanup**: Heartbeat goroutine exits cleanly when connection closes
+
+**Why Heartbeat is Necessary**:
+
+**The Problem**:
+- Cloudflare and many reverse proxies close idle WebSocket connections after 100 seconds
+- Users who open a document but don't type get disconnected
+- Creates poor UX with unnecessary reconnection overhead
+
+**The Solution**:
+- Send ping every 60 seconds (comfortably under 100s timeout)
+- Keeps connection "active" from proxy's perspective
+- Each ping/pong resets the `WS_READ_TIMEOUT` timer
+
+**Resource Usage**:
+```pseudocode
+FOR EACH active document with N users:
+    1 persister goroutine
+    N connection handler goroutines (message loop)
+    N broadcast forwarder goroutines (metadata updates)
+    N heartbeat goroutines (keepalive pings)
+
+Total: 1 + 3N goroutines per document
+```
+
+**Example**: 100 active documents with average 3 users per document
+- 100 persister goroutines
+- 300 connection handler goroutines
+- 300 broadcast forwarder goroutines
+- 300 heartbeat goroutines
+- **Total: ~1000 goroutines**
+
+**Why This Is Efficient**:
+- Go goroutines are lightweight (2KB stack initially)
+- Scheduled cooperatively by Go runtime
+- 1000 goroutines use < 2MB memory
+- Heartbeat CPU usage: negligible (1 syscall per 60 seconds per connection)
+
+**Configuration**:
+```bash
+# Default: 60 seconds (safe for Cloudflare's 100s timeout)
+WS_HEARTBEAT_INTERVAL_SECONDS=60
+
+# Disable heartbeat (testing only, not recommended)
+WS_HEARTBEAT_INTERVAL_SECONDS=0
+```
+
+**Interaction with Read Timeout**:
+- Without heartbeat: Connection idles → 30 minutes → `WS_READ_TIMEOUT` triggers → disconnect
+- With heartbeat: Connection idles → ping every 60s → timeout resets → connection stays alive indefinitely
+- Read timeout becomes a safety net for catastrophic failures (e.g., network partition where ping succeeds but data flow broken)
 
 ---
 
