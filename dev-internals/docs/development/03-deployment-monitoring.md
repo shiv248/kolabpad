@@ -747,6 +747,7 @@ Kolabpad has **separate log levels** for backend and frontend:
 **Backend (Go server)** - Configure via `BACKEND_LOG_LEVEL`:
 - **debug**: Verbose (every message, operation, state change)
 - **info**: Standard operational events (**recommended for production**)
+- **warn**: Warnings and errors only (good for production monitoring - captures abnormal events)
 - **error**: Only errors (too quiet, not recommended - you won't see startup/requests)
 
 **Frontend (Browser console)** - Configure via `FRONTEND_LOG_LEVEL`:
@@ -756,7 +757,7 @@ Kolabpad has **separate log levels** for backend and frontend:
 
 **Production recommendation**:
 ```bash
-BACKEND_LOG_LEVEL=info      # See server operations in docker logs
+BACKEND_LOG_LEVEL=info      # See server operations in docker logs (or 'warn' for quieter logs)
 FRONTEND_LOG_LEVEL=error    # Keep browser console quiet
 ```
 
@@ -790,6 +791,15 @@ info: persisted docId=abc123 reason=safety_net revision=100
 info: critical_write docId=abc123 type=otp_protect
 info: flush docId=abc123 reason=last_disconnect
 debug: persist_latency docId=abc123 duration=2.3ms
+```
+
+**Connection events**:
+
+```
+info: User 5 connected
+info: User 5 disconnected
+warn: User 5 disconnected forcefully
+error: Disconnect reason: websocket: close 1006 (abnormal closure)
 ```
 
 **OTP validation**:

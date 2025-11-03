@@ -175,7 +175,16 @@ FUNCTION handleWebSocketConnection(documentId, otp):
         HandleMessage(message, connection, document, userId)
 
     // 9. Cleanup on disconnect
-    OnDisconnect:
+    OnDisconnect(error):
+        // Log disconnect based on reason
+        IF error is null:
+            LOG_INFO "User disconnected"
+        ELSE IF error is normal closure (StatusNormalClosure OR StatusGoingAway):
+            LOG_INFO "User disconnected"
+        ELSE:
+            LOG_WARN "User disconnected forcefully"
+            LOG_ERROR "Disconnect reason: %v", error
+
         document.decrementConnectionCount()
         isLastConnection = (document.connectionCount == 0)
 
@@ -213,6 +222,8 @@ Connect to protected document with wrong OTP
 ```
 
 **Design Decision**: We explicitly track connection count instead of relying on subscribers map length because subscribers are used for metadata broadcasts, not all connections. The connection count gives us precise control over when to start/stop the persister.
+
+**Disconnect Logging Strategy**: The cleanup function differentiates between normal and abnormal disconnects by inspecting the error status. Normal closures (initiated by client or graceful shutdown) are logged at INFO level, while forceful disconnects (network failures, timeouts, crashes) are logged at WARN level with detailed error information. This helps operators distinguish between expected connection churn and potential network or client issues.
 
 ### Hot (Active): In-Memory with Active Users
 
